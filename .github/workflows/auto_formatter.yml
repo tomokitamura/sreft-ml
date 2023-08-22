@@ -1,0 +1,30 @@
+name: auto_formatter
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+      - name: format python code
+        uses: psf/black@stable
+        with:
+          options: "--verbose"
+      - name: format import order with isort
+        uses: isort/isort-action@v1
+        with:
+          configuration: "--verbose"
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Automated code formatting"
+          commit_options: "--no-verify"
