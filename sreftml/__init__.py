@@ -1,3 +1,1 @@
-from . import sreftml_model
-from . import plots
-from . import utilities
+from . import plots, sreftml_model, utilities

@@ -1,6 +1,8 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
-DESCRIPTION = "sreft-ml: Related toolset for building disease progression models by sreft-ml"
+DESCRIPTION = (
+    "sreft-ml: Related toolset for building disease progression models by sreft-ml"
+)
 NAME = "sreft-ml"
 AUTHOR = "Ryota Jin"
 AUTHOR_EMAIL = "riu2309j@gmail.com"
@@ -36,19 +38,20 @@ with open("README.md", "r") as fp:
     readme = fp.read()
 long_description = readme
 
-setup(name=NAME,
-      author=AUTHOR,
-      author_email=AUTHOR_EMAIL,
-      maintainer=AUTHOR,
-      maintainer_email=AUTHOR_EMAIL,
-      description=DESCRIPTION,
-      long_description=long_description,
-      license=LICENSE,
-      url=URL,
-      version=VERSION,
-      download_url=DOWNLOAD_URL,
-      python_requires=PYTHON_REQUIRES,
-      install_requires=INSTALL_REQUIRES,
-      packages=PACKAGES,
-      classifiers=CLASSIFIERS
-    )
+setup(
+    name=NAME,
+    author=AUTHOR,
+    author_email=AUTHOR_EMAIL,
+    maintainer=AUTHOR,
+    maintainer_email=AUTHOR_EMAIL,
+    description=DESCRIPTION,
+    long_description=long_description,
+    license=LICENSE,
+    url=URL,
+    version=VERSION,
+    download_url=DOWNLOAD_URL,
+    python_requires=PYTHON_REQUIRES,
+    install_requires=INSTALL_REQUIRES,
+    packages=PACKAGES,
+    classifiers=CLASSIFIERS,
+)
