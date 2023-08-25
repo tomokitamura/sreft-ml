@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import sklearn.preprocessing as sp
 import statsmodels.formula.api as smf
 import tensorflow as tf
 from sklearn.linear_model import LinearRegression
@@ -343,3 +344,27 @@ def compute_permutation_importance(
         std_pi.append(np.std(pis))
 
     return np.array(mean_pi), np.array(std_pi)
+
+def calculate_offsetT_prediction(
+        sreft: tf.keras.Model,
+        scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+        scaler_y: sp.StandardScaler,
+        name_biomarkers: list[str],
+) -> pd.DataFrame:
+    """
+    Calculate offsetT and prediction value of biomarkers.
+
+    Args:
+        sreft (tf.keras.Model): The trained SReFT model.
+        scaled_features (tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]): The scaled features. Pass x, cov, m, and y in that order.
+        scaler_y (sp.StanderdScaler): The scaler for y.
+        name_biomarkers (list[str]): List of biomarker names.
+
+    Returns:
+        pd.DataFrame: The DataFrame with offsetT and prediction.
+    """
+    x_scaled, cov_scaled, m_scaled, y_scaled = scaled_features
+    offsetT = pd.DataFrame(sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1)),columns=["offsetT"])
+    y_pred = pd.DataFrame(scaler_y.inverse_transform(sreft(scaled_features)),
+                          columns=[f"{biomarker}_pred" for biomarker in name_biomarkers])
+    return pd.concat([offsetT, y_pred], axis=1)
