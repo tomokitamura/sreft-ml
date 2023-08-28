@@ -539,10 +539,7 @@ def correlation_plot_strata(
 
 def residual_plot(
     df: pd.DataFrame,
-    sreft: tf.keras.Model,
     name_biomarkers: list[str],
-    scaler_y: sp.StandardScaler,
-    scaled_features: tuple,
     ncol_max: int = 4,
     save_file_path: str | None = None,
 ) -> plt.Figure:
@@ -550,22 +547,27 @@ def residual_plot(
     Generate a plot of residuals.
 
     Args:
-        df (pd.DataFrame): Dataframe with biomarkers and other information.
-        sreft (tf.keras.Model): Object responsible for transforming the data.
+        df (pd.DataFrame): Input Dataframe. This must contain offsetT, actual value of biomarkers and prediction value of biomarkers.
         name_biomarkers (List[str]): List of biomarker names.
-        scaler_y: Scaler for the y values.
-        scaled_features (tuple): Tuple of scaled feature. Pass x, cov, m and y in that order.
         ncol_max (int, optional): Maximum number of columns. Default is 4.
         save_file_path (str, optional): The path where the plot will be saved. Default to None.
 
     Returns:
         Figure: The created matplotlib figure.
     """
+    if not 'offsetT' in df.columns:
+        warnings.warn("offsetT does not exist in df. df must contain offsetT. Skip drawing residual plot.")
+        return None
+    if not all([f"{biomarker}_pred" in df.columns for biomarker in name_biomarkers]):
+        warnings.warn(
+            "Some of the prediction values are missing in df. df must contain prediction values of biomarkers. Skip drawing residual plot."
+        )
+        return None
     n_biomarker = len(name_biomarkers)
     n_row, n_col = n2mfrow(n_biomarker, ncol_max)
     x_data = df.TIME.values + df.offsetT.values
-    y_pred = scaler_y.inverse_transform(sreft(scaled_features))
-    y_res = y_pred - df[name_biomarkers].values
+
+    y_res = df[[f"{biomarker}_pred" for biomarker in name_biomarkers]].values - df[name_biomarkers].values
 
     fig, axs = plt.subplots(
         n_row, n_col, figsize=(n_col * 3, n_row * 3), tight_layout=True, dpi=300
