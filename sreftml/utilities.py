@@ -347,6 +347,7 @@ def compute_permutation_importance(
 
 def calculate_offsetT_prediction(
         sreft: tf.keras.Model,
+        df: pd.DataFrame,
         scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
         scaler_y: sp.StandardScaler,
         name_biomarkers: list[str],
@@ -356,15 +357,18 @@ def calculate_offsetT_prediction(
 
     Args:
         sreft (tf.keras.Model): The trained SReFT model.
+        df (pd.DataFrame): The input DataFrame.
         scaled_features (tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]): The scaled features. Pass x, cov, m, and y in that order.
         scaler_y (sp.StanderdScaler): The scaler for y.
         name_biomarkers (list[str]): List of biomarker names.
 
     Returns:
-        pd.DataFrame: The DataFrame with offsetT and prediction.
+        pd.DataFrame: The DataFrame including the columns of the input DataFrame, offsetT and the prediction values.
     """
+    df_ = df.copy()
     x_scaled, cov_scaled, m_scaled, y_scaled = scaled_features
-    offsetT = pd.DataFrame(sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1)),columns=["offsetT"])
+    offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
     y_pred = pd.DataFrame(scaler_y.inverse_transform(sreft(scaled_features)),
                           columns=[f"{biomarker}_pred" for biomarker in name_biomarkers])
-    return pd.concat([offsetT, y_pred], axis=1)
+    df_ = df_.assign(offsetT=offsetT, **y_pred)
+    return df_
