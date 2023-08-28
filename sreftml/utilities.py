@@ -345,12 +345,13 @@ def compute_permutation_importance(
 
     return np.array(mean_pi), np.array(std_pi)
 
+
 def calculate_offsetT_prediction(
-        sreft: tf.keras.Model,
-        df: pd.DataFrame,
-        scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-        scaler_y: sp.StandardScaler,
-        name_biomarkers: list[str],
+    sreft: tf.keras.Model,
+    df: pd.DataFrame,
+    scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    scaler_y: sp.StandardScaler,
+    name_biomarkers: list[str],
 ) -> pd.DataFrame:
     """
     Calculate offsetT and prediction value of biomarkers.
@@ -368,7 +369,9 @@ def calculate_offsetT_prediction(
     df_ = df.copy()
     x_scaled, cov_scaled, m_scaled, y_scaled = scaled_features
     offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
-    y_pred = pd.DataFrame(scaler_y.inverse_transform(sreft(scaled_features)),
-                          columns=[f"{biomarker}_pred" for biomarker in name_biomarkers])
+    y_pred = pd.DataFrame(
+        scaler_y.inverse_transform(sreft(scaled_features)),
+        columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
+    )
     df_ = df_.assign(offsetT=offsetT, **y_pred)
     return df_
