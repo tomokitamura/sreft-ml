@@ -555,6 +555,14 @@ def residual_plot(
     Returns:
         Figure: The created matplotlib figure.
     """
+    if not 'offsetT' in df.columns:
+        warnings.warn("offsetT does not exist in df. df must contain offsetT. Skip drawing residual plot.")
+        return None
+    if not all([f"{biomarker}_pred" in df.columns for biomarker in name_biomarkers]):
+        warnings.warn(
+            "Some of the prediction values are missing in df. df must contain prediction values of biomarkers. Skip drawing residual plot."
+        )
+        return None
     n_biomarker = len(name_biomarkers)
     n_row, n_col = n2mfrow(n_biomarker, ncol_max)
     x_data = df.TIME.values + df.offsetT.values
