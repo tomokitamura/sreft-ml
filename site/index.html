@@ -144,7 +144,7 @@
 )
 </code></pre>
 <p>Standardize the data if necessary. This is a fundamental and indispensable step since in many cases the scale differs between biomarkers. For the scaler, we assume scikit-learn's Scaler. Any Scaler may be used. Choose the one that best suits the nature of your data.
-<strong>But do not convert x.</strong></p>
+<strong>But do not convert x. x is in pandas format, so please only convert it to numpy format.</strong></p>
 <pre><code class="language-python">x_scaled = x.values.reshape(-1, 1)
 cov_scaled = scaler_cov.fit_transform(cov.values)
 m_scaled = scaler_m.fit_transform(m.values)
@@ -264,5 +264,5 @@ sreft.fit(
 
 <!--
 MkDocs version : 1.5.2
-Build Date UTC : 2023-09-12 06:35:59.335453+00:00
+Build Date UTC : 2023-09-12 07:41:22.955148+00:00
 -->
