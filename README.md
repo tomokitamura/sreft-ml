@@ -18,4 +18,4 @@ from sreftml import plots, sreftml_model, utilities
 ```
 
 ## Document
-In preparation
+See our [GitHub page](https://ryotajin.github.io/sreft-ml/)

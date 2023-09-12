@@ -95,7 +95,7 @@ def prediction_plot(
     name_biomarkers: list[str],
     name_covariates: list[str],
     scaler_y: sp.StandardScaler,
-    scaler_cov,
+    scaler_cov: sp.StandardScaler,
     res: int = 100,
     density: bool = False,
     useOffsetT: bool = True,
@@ -110,8 +110,8 @@ def prediction_plot(
         df (pd.DataFrame): DataFrame with the data.
         name_biomarkers (list[str]): The names of the biomarkers.
         name_covariates (list[str]): The names of the covariates.
-        scaler_y: The scaler for the y values.
-        scaler_cov: The scaler for the covariate values.
+        scaler_y (sp.StandardScaler): The scaler for the y values.
+        scaler_cov (sp.StandardScaler): The scaler for the covariate values.
         res (int, optional): Resolution of the plot. Defaults to 100.
         density (bool, optional): Whether to plot density or not. Defaults to False.
         useOffsetT (bool, optional): Whether to use offsetT or not. Defaults to True.
