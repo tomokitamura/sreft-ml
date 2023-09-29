@@ -10,6 +10,13 @@ import tensorflow as tf
 from sklearn.linear_model import LinearRegression
 
 
+class NullModel:
+    params = [np.nan, np.nan]
+
+    def __init__(self, Intercept, TIME):
+        self.params = [Intercept, TIME]
+
+
 def n2mfrow(n_plots: int, ncol_max: int = 4) -> tuple[int, int]:
     """
     Determines the number of rows and columns required to plot a given number of subplots.
@@ -103,6 +110,21 @@ def mixed_effect_linear_regression(
             .reset_index(drop=True)
             .set_axis(["ID", "TIME", "TARGET"], axis=1)
         )
+        if df_["TIME"].nunique() == 1:
+            warnings.warn(
+                f"Only one time point is available for {y}. The slope cannot be calculated."
+            )
+            tmp = pd.DataFrame(
+                {
+                    "ID": df_.ID.unique(),
+                    f"{y}_slope": np.nan,
+                    f"{y}_intercept": df_.groupby("ID")["TARGET"].mean().values,
+                }
+            )
+            result = result.merge(tmp, how="outer")
+            models.append(NullModel(df_.groupby("ID")["TARGET"].mean().mean(), np.nan))
+            continue
+
         full_model = smf.mixedlm(
             "TARGET ~ TIME", data=df_, groups="ID", re_formula="~TIME"
         ).fit()
@@ -169,7 +191,9 @@ def split_data_for_sreftml(
 
     x = df_.TIME
     cov = df_[name_covariates]
-    m = df_.loc[:, df_.columns.str.contains("_slope|_intercept")]
+    m = df_.loc[:, df_.columns.str.contains("_slope|_intercept")].dropna(
+        axis=1, how="all"
+    )
     y = df_[name_biomarkers]
 
     return x, cov, m, y
