@@ -11,8 +11,6 @@ from sklearn.linear_model import LinearRegression
 
 
 class NullModel:
-    params = [np.nan, np.nan]
-
     def __init__(self, Intercept, TIME):
         self.params = [Intercept, TIME]
 
