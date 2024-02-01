@@ -9,7 +9,7 @@ import sklearn.preprocessing as sp
 import tensorflow as tf
 from scipy.stats import gaussian_kde, linregress
 
-from .utilities import clean_duplicate, n2mfrow
+from .utilities import clean_duplicate, n2mfrow, remove_outliers
 
 
 def hp_search_plot(
@@ -93,14 +93,20 @@ def prediction_plot(
     sreft: tf.keras.Model,
     df: pd.DataFrame,
     name_biomarkers: list[str],
+    name_biomarkers_display: list[str],
     name_covariates: list[str],
     scaler_y: sp.StandardScaler,
     scaler_cov: sp.StandardScaler,
+    biomarkers_is_reversed: dict[str, bool] | None = None,
+    biomarkers_to_remove_outlier: list[str] | None = None,
     res: int = 100,
     density: bool = False,
     useOffsetT: bool = True,
     ncol_max: int = 4,
     save_file_path: str | None = None,
+    title_size: int = 20,
+    label_size: int = 15,
+    tick_size: int = 15,
 ) -> plt.Figure:
     """
     Plot the predictions of the SReFT model.
@@ -112,6 +118,8 @@ def prediction_plot(
         name_covariates (list[str]): The names of the covariates.
         scaler_y (sp.StandardScaler): The scaler for the y values.
         scaler_cov (sp.StandardScaler): The scaler for the covariate values.
+        biomarkers_to_remove_outlier (list[str] | None, optional): The names of the biomarkers to remove outliers. Defaults to None.
+        biomarkers_is_reversed (dict[str, bool] | None, optional): Whether the biomarkers are reversed or not. Defaults to None.
         res (int, optional): Resolution of the plot. Defaults to 100.
         density (bool, optional): Whether to plot density or not. Defaults to False.
         useOffsetT (bool, optional): Whether to use offsetT or not. Defaults to True.
@@ -125,8 +133,11 @@ def prediction_plot(
     n_covariate = len(name_covariates)
     n_row, n_col = n2mfrow(n_biomarker, ncol_max)
     cm = plt.colormaps["Set1"]
+    if biomarkers_to_remove_outlier is None:
+        biomarkers_to_remove_outlier = []
 
     y_data = df[name_biomarkers].values
+
     if useOffsetT:
         x_data = df.TIME.values + df.offsetT.values
         cov_dummy = np.array([i for i in itertools.product([0, 1], repeat=n_covariate)])
@@ -136,6 +147,10 @@ def prediction_plot(
         x_model = np.tile(x_model, 2**n_covariate).reshape(-1, 1)
         x_model = np.concatenate((x_model, cov_dummy_scaled), axis=1)
         y_model = scaler_y.inverse_transform(sreft.model_y(x_model))
+        if biomarkers_is_reversed is not None:
+            for k, biomarker in enumerate(name_biomarkers):
+                if biomarkers_is_reversed[biomarker]:
+                    y_model[:, k] = -y_model[:, k]
     else:
         x_data = df.TIME.values
 
@@ -144,7 +159,7 @@ def prediction_plot(
         n_col,
         figsize=(n_col * 3, n_row * 3),
         tight_layout=True,
-        dpi=300,
+        dpi=600,
         sharex="row",
     )
     for k, ax in enumerate(axs.flat):
@@ -152,9 +167,20 @@ def prediction_plot(
             ax.axis("off")
             continue
 
+        x_data_tmp = x_data
+        y_data_tmp = y_data
+
+        if name_biomarkers[k] in biomarkers_to_remove_outlier:
+            outlier_mask = remove_outliers(y_data_tmp[:, k])
+            x_data_tmp = x_data_tmp[outlier_mask]
+            y_data_tmp = y_data_tmp[outlier_mask]
+        if biomarkers_is_reversed is not None:
+            if biomarkers_is_reversed[name_biomarkers[k]]:
+                y_data_tmp[:, k] = -y_data_tmp[:, k]
+
         if density:
-            x_ = x_data[~np.isnan(y_data[:, k])]
-            y_ = y_data[~np.isnan(y_data[:, k]), k]
+            x_ = x_data_tmp[~np.isnan(y_data_tmp[:, k])]
+            y_ = y_data_tmp[~np.isnan(y_data_tmp[:, k]), k]
             if np.var(x_) == 0:
                 z = gaussian_kde(y_)(y_)
             else:
@@ -163,7 +189,9 @@ def prediction_plot(
             idx = z.argsort()
             ax.scatter(x_[idx], y_[idx], c=z[idx], s=2, label="_nolegend_")
         else:
-            ax.scatter(x_data, y_data[:, k], c="silver", s=2, label="_nolegend_")
+            ax.scatter(
+                x_data_tmp, y_data_tmp[:, k], c="silver", s=2, label="_nolegend_"
+            )
 
         if useOffsetT:
             for i in range(2**n_covariate):
@@ -173,11 +201,21 @@ def prediction_plot(
                     c=cm(i),
                     lw=4,
                 )
-            ax.set_xlabel("Disease Time (year)")
+                ax.minorticks_on()
+                ax.tick_params(axis="x", labelsize=tick_size)
+                ax.tick_params(axis="y", labelsize=tick_size)
+                ax.tick_params(axis="x", which="minor", length=7)
+                ax.tick_params(axis="y", which="minor", length=7)
+                # ax.set_xlabel("Disease Time (year)", fontsize=label_size, fontweight="bold")
+                ax.set_xlabel("")
         else:
-            ax.set_xlabel("Observation Period (year)")
+            ax.set_xlabel(
+                "Observation Period (year)", fontsize=label_size, fontweight="bold"
+            )
 
-        ax.set_title(name_biomarkers[k], fontsize=15)
+        ax.set_title(name_biomarkers_display[k], fontsize=title_size, fontweight="bold")
+
+    fig.supxlabel("疾患時間（年）", fontsize=label_size, fontweight="heavy")
 
     if n_covariate > 0:
         legend_labels = [
