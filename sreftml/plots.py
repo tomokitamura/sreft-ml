@@ -1006,8 +1006,7 @@ def r_squared_plot(
 
 
 def scatter_matrix_plot_extra(
-    df: pd.DataFrame,
-    save_file_path: str | None = None
+    df: pd.DataFrame, save_file_path: str | None = None
 ) -> sns.axisgrid.PairGrid:
     """
     Plot correlation matrix.
