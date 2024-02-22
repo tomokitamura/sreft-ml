@@ -881,3 +881,74 @@ def prediction_sim_plot(
         fig.savefig(save_file_path, transparent=True, bbox_inches="tight")
 
     return fig
+
+
+def surv_analysis_plot(
+    fit_model: dict,
+    ci_show: bool = True,
+    only_best: bool = True,
+    title: str | None = None,
+    xlabel: str = "Disease Time (year)",
+    save_dir_path: str | None = None,
+) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
+    """
+    Generate survival analysis plot.
+
+    Args:
+        fit_model (dict): A dictionary of survival analysis objects.
+        ci_show (bool, optional): Whether to show confidence intervals. Defaults to True.
+        only_best (bool, optional): Whether to plot only the best model. Defaults to True.
+        title (str | None, optional): Title for each plot. If None, the title from fit_model is used.
+        xlabel (str, optional): X-axis label for each plot. Defaults to "Disease Time (year)".
+        save_dir_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+        tuple[plt.Figure, plt.Figure, plt.Figure]: Plot objects for the survival function, cumulative hazard function, and hazard function.
+    """
+    if title is None:
+        title = fit_model["title"]
+
+    fit_model_parametric = {
+        key: value
+        for key, value in fit_model.items()
+        if key not in ["title", "kmf", "naf"]
+    }
+    if only_best:
+        aics = [i.AIC_ for i in fit_model_parametric.values()]
+        best_model = list(fit_model_parametric.keys())[aics.index(min(aics))]
+        fit_model_parametric = {best_model: fit_model_parametric[best_model]}
+
+    surv_plot = plt.figure(figsize=(5, 5), dpi=300)
+    fit_model["kmf"].plot_survival_function(ci_show=ci_show, lw=2)
+    [
+        k.plot_survival_function(ci_show=ci_show, lw=2)
+        for k in fit_model_parametric.values()
+    ]
+    plt.xlabel(xlabel)
+    plt.ylabel("Survival Function")
+    plt.title(title)
+    if save_dir_path:
+        plt.savefig(save_dir_path + "surv_func.png", transparent=True)
+
+    cumhaz_plot = plt.figure(figsize=(5, 5), dpi=300)
+    fit_model["naf"].plot_cumulative_hazard(ci_show=ci_show, lw=2)
+    [
+        k.plot_cumulative_hazard(ci_show=ci_show, lw=2)
+        for k in fit_model_parametric.values()
+    ]
+    plt.xlabel(xlabel)
+    plt.ylabel("Cumlative Hazard Function")
+    plt.title(title)
+    if save_dir_path:
+        plt.savefig(save_dir_path + "cumhaz_func.png", transparent=True)
+
+    haz_plot = plt.figure(figsize=(5, 5), dpi=300)
+    fit_model["naf"].plot_hazard(bandwidth=2, ci_show=ci_show, lw=2)
+    [k.plot_hazard(ci_show=ci_show, lw=2) for k in fit_model_parametric.values()]
+    plt.xlabel(xlabel)
+    plt.ylabel("Hazard Function")
+    plt.title(title)
+    if save_dir_path:
+        plt.savefig(save_dir_path + "haz_func.png", transparent=True)
+
+    return surv_plot, cumhaz_plot, haz_plot
