@@ -649,8 +649,13 @@ def merged_permutation_importance_plot(
     Returns:
         plt.Figure: The plotted figure.
     """
-    bar = pd.DataFrame({"labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers] + name_covariates,
-                        "values": mean_pi.round(3)})
+    bar = pd.DataFrame(
+        {
+            "labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers]
+            + name_covariates,
+            "values": mean_pi.round(3),
+        }
+    )
 
     result_data = {"labels": [], "mean_pi": []}
 
@@ -662,14 +667,14 @@ def merged_permutation_importance_plot(
         total_value = slope_value + intercept_value
         result_data["labels"].append(i)
         result_data["mean_pi"].append(total_value)
-    
+
     for i in name_covariates:
         cov_value = bar.loc[bar["labels"] == i, "mean_pi"].values[0]
         result_data["labels"].append(i)
         result_data["mean_pi"].append(cov_value)
 
     result_data = pd.DataFrame(result_data)
-    
+
     mean_pi = result_data.mean_pi.values
     rank = np.argsort(mean_pi)
     fig = plt.figure(figsize=(len(rank) / 4, 10), dpi=300, tight_layout=True)

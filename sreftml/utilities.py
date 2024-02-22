@@ -401,13 +401,17 @@ def compute_permutation_importance(
             if i < m_test.shape[1]:
                 m_test_rand = np.copy(m_test)
                 rng.shuffle(m_test_rand[:, i])
-                y_pred_rand = sreft.model_1(np.concatenate((m_test_rand, cov_test), axis=-1)).numpy()
+                y_pred_rand = sreft.model_1(
+                    np.concatenate((m_test_rand, cov_test), axis=-1)
+                ).numpy()
             else:
                 cov_test_rand = np.copy(cov_test)
                 rng.shuffle(cov_test_rand[:, i - m_test.shape[1]])
-                y_pred_rand = sreft.model_1(np.concatenate((m_test, cov_test_rand), axis=-1)).numpy()
+                y_pred_rand = sreft.model_1(
+                    np.concatenate((m_test, cov_test_rand), axis=-1)
+                ).numpy()
 
-            nglls_diff = (offestt_pred - y_pred_rand)**2
+            nglls_diff = (offestt_pred - y_pred_rand) ** 2
             temp_pi = np.nanmean(nglls_diff)
             pis.append(temp_pi)
 
