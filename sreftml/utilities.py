@@ -522,3 +522,69 @@ def survival_analysis(
             )
 
     return fit_model
+
+
+def multi_column_filter(
+    df: pd.DataFrame,
+    upper_lim: dict[str, float] = None,
+    lower_lim: dict[str, float] = None,
+    IQR_filter: list = None,
+):
+    """
+    Applies limits and IQR filtering on DataFrame columns.
+
+    Operations:
+        NaN substitution for values outside the specified upper and lower limits.
+        IQR-based outlier removal in specified columns.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to be filtered.
+        upper_lim (dict[str, float], optional): Upper limits per column.
+        lower_lim (dict[str, float], optional): Lower limits per column.
+        IQR_filter (list, optional): Columns for IQR outlier detection
+
+    Returns:
+        pd.DataFrame: DataFrame after applying the defined filters.
+
+    Notes:
+        Overlapping `upper_lim`/`lower_lim` and `IQR_filter` keys cause warnings
+        and filtering by `upper_lim`/`lower_lim`.
+    """
+    df_filtered = df.copy()
+    if upper_lim is None:
+        upper_lim = {}
+    if lower_lim is None:
+        lower_lim = {}
+    if IQR_filter is None:
+        IQR_filter = []
+
+    if upper_lim:
+        for k, v in upper_lim.items():
+            df_filtered.loc[df_filtered[k] > v, k] = np.nan
+        overlap_upper_IQR = set(upper_lim.keys()) & set(IQR_filter)
+        if overlap_upper_IQR:
+            warnings.warn(
+                f"The columns {overlap_upper_IQR} were present in both upper_lim and IQR_filter, therefore they were filtered using the values from upper_lim."
+            )
+
+    if lower_lim:
+        for k, v in lower_lim.items():
+            df_filtered.loc[df_filtered[k] < v, k] = np.nan
+        overlap_lower_IQR = set(lower_lim.keys()) & set(IQR_filter)
+        if overlap_lower_IQR:
+            warnings.warn(
+                f"The columns {overlap_lower_IQR} were present in both lower_lim and IQR_filter, therefore they were filtered using the values from lower_lim."
+            )
+
+    if IQR_filter:
+        IQR_exclusive = list(
+            set(IQR_filter) - set(upper_lim.keys()) - set(lower_lim.keys())
+        )
+        q1 = df_filtered.quantile(0.25)
+        q3 = df_filtered.quantile(0.75)
+        iqr = q3 - q1
+        df_filtered[IQR_exclusive] = df_filtered[IQR_exclusive].mask(
+            (df_filtered < q1 - 1.5 * iqr) | (df_filtered > q3 + 1.5 * iqr), np.nan
+        )
+
+    return df_filtered

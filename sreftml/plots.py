@@ -952,3 +952,101 @@ def surv_analysis_plot(
         plt.savefig(save_dir_path + "haz_func.png", transparent=True)
 
     return surv_plot, cumhaz_plot, haz_plot
+
+
+def r_squared_plot(
+    df: pd.DataFrame,
+    name_biomarkers: list[str],
+    isSort: bool = True,
+    cutoff: float = 0.1,
+    save_file_path: str | None = None,
+) -> plt.Figure:
+    """
+    Generate a horizontal bar plot displaying the R-squared values of biomarkers.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing the biomarker data.
+        name_biomarkers (list[str]): List of column names representing the biomarkers.
+        isSort (bool, optional): If True, sort biomarkers by R-squared values. Default is True.
+        cutoff (float, optional): Cutoff value for highlighting specific R-squared values. Biomarkers with R-squared values greater than or equal to cutoff will be highlighted. Default is 0.1.
+        save_file_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+    - fig (plt.Figure): Matplotlib figure object representing the generated plot.
+    """
+    res = df[name_biomarkers].values - df.filter(like="_pred", axis=1).values
+    res_var = np.nanvar(res, axis=0)
+    df_var = np.nanvar(df[name_biomarkers].values, axis=0)
+    r_squared = 1 - res_var / df_var
+
+    cm = plt.get_cmap("tab10")
+    fig = plt.figure(dpi=300, tight_layout=True)
+    if cutoff > 0:
+        plt.axvline(x=cutoff, ls="--", c="black")
+        colors = [cm(1) if x >= cutoff else cm(0) for x in r_squared]
+    else:
+        colors = [cm(0) for _ in range(len(r_squared))]
+
+    if isSort:
+        rank = np.argsort(r_squared)
+        plt.barh(
+            [name_biomarkers[i] for i in rank],
+            r_squared[rank],
+            color=[colors[i] for i in rank],
+        )
+    else:
+        plt.barh(name_biomarkers, r_squared, color=colors)
+
+    plt.xlabel("r_squared")
+
+    if save_file_path:
+        plt.savefig(save_file_path, transparent=True)
+
+    return fig
+
+
+def scatter_matrix_plot_extra(
+    df: pd.DataFrame,
+    save_file_path: str | None = None
+) -> sns.axisgrid.PairGrid:
+    """
+    Plot correlation matrix.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        save_file_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+        sns.axisgrid.PairGrid: PairGrid object with the correlation plot.
+    """
+
+    def corrfunc(x, y, **kwds):
+        ax = plt.gca()
+        ax.tick_params(bottom=False, top=False, left=False, right=False)
+        sns.despine(ax=ax, bottom=True, top=True, left=True, right=True)
+        r = x.corr(y, method="pearson")
+        norm = plt.Normalize(-1, 1)
+        facecolor = plt.get_cmap("seismic")(norm(r))
+        ax.set_facecolor(facecolor)
+        ax.set_alpha(0)
+        lightness = (max(facecolor[:3]) + min(facecolor[:3])) / 2
+        ax.annotate(
+            f"{r:.2f}",
+            xy=(0.5, 0.5),
+            xycoords=ax.transAxes,
+            color="white" if lightness < 0.7 else "black",
+            size=26,
+            ha="center",
+            va="center",
+        )
+
+    g = sns.PairGrid(df)
+    g.map_diag(sns.histplot, kde=False)
+    g.map_lower(plt.scatter, s=2)
+    g.map_upper(corrfunc)
+    g.figure.tight_layout()
+
+    if save_file_path:
+        g.savefig(save_file_path)
+
+    return g
