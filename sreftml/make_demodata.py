@@ -86,7 +86,7 @@ def data_synthesis(
     onset_duration: float,
     observation_period: float,
     surv_inv: Callable[[float, dict], float] = gompertz_surv_inv,
-    params_surv: dict = {"c_":0.25, "lambda_":0.015},
+    params_surv: dict = {"c_": 0.25, "lambda_": 0.015},
     left_truncate: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -175,8 +175,8 @@ def data_synthesis(
     )
 
     df = pd.concat([df_info, df_biomarkers, df_covariates], axis=1)
-    
+
     if left_truncate:
         df = df.query("left_t == 0").drop("left_t", axis=1)
-    
+
     return df, params_output
