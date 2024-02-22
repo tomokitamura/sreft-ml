@@ -630,6 +630,63 @@ def permutation_importance_plot(
     return fig
 
 
+def merged_permutation_importance_plot(
+    mean_pi: np.ndarray,
+    name_biomarkers: list[str],
+    name_covariates: list[str],
+    y_axis_log: bool = False,
+    save_file_path: str | None = None,
+) -> plt.Figure:
+    """
+    Generate a permutation importance plot.
+
+    Args:
+        mean_pi (np.ndarray): Array of mean permutation importance values.
+        feature_label (list[str]): List of feature names for which PI was measured.
+        y_axis_log (bool, optional): Whether to use log scale for y-axis. Default is False.
+        save_file_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+        plt.Figure: The plotted figure.
+    """
+    bar = pd.DataFrame({"labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers] + name_covariates,
+                        "values": mean_pi.round(3)})
+
+    result_data = {"labels": [], "mean_pi": []}
+
+    for i in name_biomarkers:
+        slope_label = i + "_slope"
+        intercept_label = i + "_intercept"
+        slope_value = bar.loc[bar["labels"] == slope_label, "mean_pi"].values[0]
+        intercept_value = bar.loc[bar["labels"] == intercept_label, "mean_pi"].values[0]
+        total_value = slope_value + intercept_value
+        result_data["labels"].append(i)
+        result_data["mean_pi"].append(total_value)
+    
+    for i in name_covariates:
+        cov_value = bar.loc[bar["labels"] == i, "mean_pi"].values[0]
+        result_data["labels"].append(i)
+        result_data["mean_pi"].append(cov_value)
+
+    result_data = pd.DataFrame(result_data)
+    
+    mean_pi = result_data.mean_pi.values
+    rank = np.argsort(mean_pi)
+    fig = plt.figure(figsize=(len(rank) / 4, 10), dpi=300, tight_layout=True)
+    plt.bar([result_data.labels.values[i] for i in rank], mean_pi[rank])
+    plt.xticks(rotation=45, ha="right")
+    if y_axis_log:
+        plt.ylabel("Permutation Importance (log scale)")
+        plt.yscale("log")
+    else:
+        plt.ylabel("Permutation Importance")
+
+    if save_file_path is not None:
+        plt.savefig(save_file_path, transparent=True)
+
+    return fig
+
+
 def var_y_plot(
     sreft: tf.keras.Model,
     name_biomarkers: list[str],

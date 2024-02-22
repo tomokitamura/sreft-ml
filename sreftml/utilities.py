@@ -311,7 +311,7 @@ def clean_duplicate(
     return df_
 
 
-def compute_permutation_importance(
+def compute_permutation_importance_(
     random_seed: int,
     sreft: tf.keras.Model,
     x_test: np.ndarray,
@@ -321,7 +321,7 @@ def compute_permutation_importance(
     n_sample: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute permutation importance of the model.
+    [Superseded] Compute permutation importance of the model.
 
     Args:
         random_seed (int): The seed for the random number generator.
@@ -359,6 +359,55 @@ def compute_permutation_importance(
                 y_test, y_pred_rand, sreft.lnvar_y
             )
             nglls_diff = neglls_rand - neglls_orig
+            temp_pi = np.nanmean(nglls_diff)
+            pis.append(temp_pi)
+
+        mean_pi.append(np.mean(pis))
+        std_pi.append(np.std(pis))
+
+    return np.array(mean_pi), np.array(std_pi)
+
+
+def compute_permutation_importance(
+    random_seed: int,
+    sreft: tf.keras.Model,
+    cov_test: np.ndarray,
+    m_test: np.ndarray,
+    n_sample: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute permutation importance of the model.
+
+    Args:
+        random_seed (int): The seed for the random number generator.
+        sreft (tf.keras.Model): The model for which to calculate permutation importance.
+        cov_test (np.ndarray): The covariates test data.
+        m_test (np.ndarray): The m test data.
+        n_sample (int): The number of samples.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The mean and standard deviation of the permutation importance.
+    """
+    rng = np.random.default_rng(random_seed)
+    offestt_pred = sreft.model_1(np.concatenate((m_test, cov_test), axis=-1)).numpy()
+
+    mean_pi = []
+    std_pi = []
+    n_pi = m_test.shape[1] + cov_test.shape[1]
+
+    for i in range(n_pi):
+        pis = []
+        for j in range(n_sample):
+            if i < m_test.shape[1]:
+                m_test_rand = np.copy(m_test)
+                rng.shuffle(m_test_rand[:, i])
+                y_pred_rand = sreft.model_1(np.concatenate((m_test_rand, cov_test), axis=-1)).numpy()
+            else:
+                cov_test_rand = np.copy(cov_test)
+                rng.shuffle(cov_test_rand[:, i - m_test.shape[1]])
+                y_pred_rand = sreft.model_1(np.concatenate((m_test, cov_test_rand), axis=-1)).numpy()
+
+            nglls_diff = (offestt_pred - y_pred_rand)**2
             temp_pi = np.nanmean(nglls_diff)
             pis.append(temp_pi)
 
