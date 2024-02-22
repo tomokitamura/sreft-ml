@@ -467,7 +467,7 @@ def survival_analysis(
     surv_time: str,
     event: str,
     useOffsetT: bool = True,
-    gompertz_init_params: list = [0.1, 0.1]
+    gompertz_init_params: list = [0.1, 0.1],
 ) -> dict:
     """
     Perform survival analysis and return a dictionary of survival analysis objects.
