@@ -2,6 +2,8 @@ import math
 import subprocess
 import warnings
 
+import autograd.numpy as agnp
+import lifelines
 import numpy as np
 import pandas as pd
 import sklearn.preprocessing as sp
@@ -450,3 +452,73 @@ def calculate_offsetT_prediction(
     )
     df_ = df_.assign(offsetT=offsetT, **y_pred)
     return df_
+
+
+class GompertzFitter(lifelines.fitters.ParametricUnivariateFitter):
+    _fitted_parameter_names = ["lambda_", "c_"]
+
+    def _cumulative_hazard(self, params, times):
+        lambda_, c_ = params
+        return lambda_ / c_ * (agnp.expm1(times * c_))
+
+
+def survival_analysis(
+    df: pd.DataFrame,
+    surv_time: str,
+    event: str,
+    useOffsetT: bool = True,
+    gompertz_init_params: list = [0.1, 0.1]
+) -> dict:
+    """
+    Perform survival analysis and return a dictionary of survival analysis objects.
+
+
+    If the survival time contains 0 or less, the survival time is converted so that the minimum value is 0.00001.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        surv_time (str): Column name of the survival time in df.
+        event (str): Column name of the event in df.
+        useOffsetT (bool, optional): Determines whether to use offsetT for the analysis. Defaults to True.
+
+    Returns:
+        dict: A dictionary of survival analysis objects.
+    """
+    fitters = [
+        (lifelines.KaplanMeierFitter, "kmf", "KaplanMeier"),
+        (lifelines.NelsonAalenFitter, "naf", "NelsonAalen"),
+        (lifelines.ExponentialFitter, "epf", "Exponential"),
+        (lifelines.WeibullFitter, "wbf", "Weibull"),
+        (GompertzFitter, "gpf", "Gompertz"),
+        (lifelines.LogLogisticFitter, "llf", "LogLogistic"),
+        (lifelines.LogNormalFitter, "lnf", "LogNormal"),
+    ]
+    fit_model = {"title": event}
+    if useOffsetT:
+        df_surv = df[["ID", "offsetT", surv_time, event]].dropna().drop_duplicates()
+
+        if df_surv["offsetT"].min() < 0:
+            raise ValueError("offsetT must be greater than or equal to 0.")
+
+        for fitter_class, key, label in fitters:
+            if key == "gpf":
+                fit_model[key] = fitter_class(label=label).fit(
+                    durations=df_surv["offsetT"] + df_surv[surv_time],
+                    event_observed=df_surv[event],
+                    entry=df_surv["offsetT"],
+                    initial_point=gompertz_init_params,
+                )
+            else:
+                fit_model[key] = fitter_class(label=label).fit(
+                    durations=df_surv["offsetT"] + df_surv[surv_time],
+                    event_observed=df_surv[event],
+                    entry=df_surv["offsetT"],
+                )
+    else:
+        df_surv = df[["ID", surv_time, event]].dropna().drop_duplicates()
+        for fitter_class, key, label in fitters:
+            fit_model[key] = fitter_class(label=label).fit(
+                durations=df_surv[surv_time], event_observed=df_surv[event]
+            )
+
+    return fit_model
