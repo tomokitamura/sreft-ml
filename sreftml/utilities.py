@@ -646,6 +646,7 @@ def load_shap(
 
     return shap_exp
 
+
 def save_shap(path_to_shap_file: str, shap_exp: shap.Explanation) -> None:
     """
     Save the SHAP explanations to the specified file.
