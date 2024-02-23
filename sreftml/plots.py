@@ -11,6 +11,7 @@ import tensorflow as tf
 from scipy.stats import gaussian_kde, linregress
 
 from .utilities import clean_duplicate, n2mfrow
+from .make_demodata import model_sigmoid
 
 
 def hp_search_plot(
@@ -720,27 +721,6 @@ def var_y_plot(
         plt.savefig(save_file_path, transparent=True)
 
     return fig
-
-
-def model_sigmoid(
-    t: float | np.ndarray, cov: float | np.ndarray, params: pd.Series
-) -> np.ndarray:
-    """
-    Compute a sigmoid model prediction.
-
-    Args:
-        t (float | np.ndarray]): Time or array of time values.
-        cov (float | np.ndarray]): Covariate or array of covariate values.
-        params (np.Series): Parameters for the model.
-
-    Returns:
-        np.ndarray: The model predictions.
-    """
-    covval = np.exp(params.filter(like="Covariate")).values.reshape(1, -1) ** cov
-    covval = np.prod(covval, axis=1)
-    li = params["a"] + params["b"] * covval * t
-    output = 1 / (1 + np.exp(-li))
-    return output
 
 
 def prediction_sim_plot(
