@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import shap
 import sklearn.preprocessing as sp
 import tensorflow as tf
 from scipy.stats import gaussian_kde, linregress
@@ -642,7 +643,8 @@ def merged_permutation_importance_plot(
 
     Args:
         mean_pi (np.ndarray): Array of mean permutation importance values.
-        feature_label (list[str]): List of feature names for which PI was measured.
+        name_biomarkers (List[str]): List of biomarker names.
+        name_covariates (list[str]): The names of the covariates.
         y_axis_log (bool, optional): Whether to use log scale for y-axis. Default is False.
         save_file_path (str, optional): The path where the plot will be saved. Default to None.
 
@@ -972,7 +974,7 @@ def r_squared_plot(
         save_file_path (str, optional): The path where the plot will be saved. Default to None.
 
     Returns:
-    - fig (plt.Figure): Matplotlib figure object representing the generated plot.
+        fig (plt.Figure): Matplotlib figure object representing the generated plot.
     """
     res = df[name_biomarkers].values - df.filter(like="_pred", axis=1).values
     res_var = np.nanvar(res, axis=0)
@@ -1049,3 +1051,113 @@ def scatter_matrix_plot_extra(
         g.savefig(save_file_path)
 
     return g
+
+
+def shap_plots(
+    shap_exp_model_1: shap.Explanation,
+    ncol_max: int = 4,
+    save_dir_path: str | None = None,
+) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
+    """
+    Plot the SHAP values of the model 1.
+
+    Args:
+        shap_exp_model_1 (shap.Explanation): The SHAP explanation for the model 1.
+        ncol_max (int, optional): Maximum number of columns for subplots. Defaults to 4.
+        save_dir_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+        tuple[plt.Figure, plt.Figure, plt.Figure]: Plot objects for shap bar, beeswarm and dependence plot.
+    """
+    bar_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
+    shap.plots.bar(shap_exp_model_1, show=False)
+    plt.title("model 1")
+    if save_dir_path:
+        plt.savefig(save_dir_path + "shap_bar_model_1.png", transparent=True)
+
+    beeswarm_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
+    shap.plots.beeswarm(shap_exp_model_1, show=False)
+    if save_dir_path:
+        plt.savefig(save_dir_path + "shap_beeswarm_model_1.png", transparent=True)
+
+    n_row, n_col = n2mfrow(shap_exp_model_1.shape[1], ncol_max=ncol_max)
+    fig, axs = plt.subplots(
+        n_row,
+        n_col,
+        figsize=(n_col * 4, n_row * 3),
+        tight_layout=True,
+        dpi=300,
+    )
+    for k, ax in enumerate(axs.flat):
+        if k >= shap_exp_model_1.shape[1]:
+            ax.axis("off")
+            continue
+        shap.plots.scatter(
+            shap_exp_model_1[:, k],
+            color=shap_exp_model_1,
+            x_jitter=0.01,
+            ax=ax,
+            show=False,
+        )
+    fig.suptitle("model 1")
+    if save_dir_path:
+        fig.savefig(save_dir_path + "shap_dependence_model_1.png", transparent=True)
+
+    return bar_plot, beeswarm_plot, fig
+
+
+def merged_shap_bar_plot(
+    shap_exp_model_1: shap.Explanation,
+    name_biomarkers: list[str],
+    name_covariates: list[str],
+    save_file_path: str | None = None,
+) -> plt.Figure:
+    """
+    Plot the SHAP values of the model 1.
+
+    Args:
+        shap_exp_model_1 (shap.Explanation): The SHAP explanation for the model 1.
+        name_biomarkers (List[str]): List of biomarker names.
+        name_covariates (list[str]): The names of the covariates.
+        save_file_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+        fig (plt.Figure): Matplotlib figure object representing the generated plot.
+    """
+    bar = pd.DataFrame(
+        {
+            "labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers]
+            + name_covariates,
+            "shap": np.mean(abs(shap_exp_model_1.values), axis=0).round(3),
+        }
+    )
+
+    result_data = {"labels": [], "shap": []}
+
+    for i in name_biomarkers:
+        slope_label = i + "_slope"
+        intercept_label = i + "_intercept"
+        slope_value = bar.loc[bar["labels"] == slope_label, "shap"].values[0]
+        intercept_value = bar.loc[bar["labels"] == intercept_label, "shap"].values[0]
+        total_value = slope_value + intercept_value
+        result_data["labels"].append(i)
+        result_data["shap"].append(total_value)
+
+    for i in name_covariates:
+        cov_value = bar.loc[bar["labels"] == i, "shap"].values[0]
+        result_data["labels"].append(i)
+        result_data["shap"].append(cov_value)
+
+    result_data = pd.DataFrame(result_data)
+
+    shap_exp = result_data.shap.values
+    rank = np.argsort(shap_exp)
+    fig = plt.figure(figsize=(len(rank) / 4, 10), dpi=300, tight_layout=True)
+    plt.bar([result_data.labels.values[i] for i in rank], shap_exp[rank])
+    plt.xticks(rotation=45, ha="right")
+    plt.ylabel("mean(|SHAP value|)")
+
+    if save_file_path is not None:
+        plt.savefig(save_file_path, transparent=True)
+
+    return fig

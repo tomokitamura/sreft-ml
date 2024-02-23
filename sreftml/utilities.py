@@ -1,4 +1,5 @@
 import math
+import pickle
 import subprocess
 import warnings
 
@@ -6,6 +7,7 @@ import autograd.numpy as agnp
 import lifelines
 import numpy as np
 import pandas as pd
+import shap
 import sklearn.preprocessing as sp
 import statsmodels.formula.api as smf
 import tensorflow as tf
@@ -588,3 +590,74 @@ def multi_column_filter(
         )
 
     return df_filtered
+
+
+def calc_shap_explanation(
+    sreft: tf.keras.Model,
+    feature_names: list[str],
+    cov_scaled: np.ndarray,
+    m_scaled: np.ndarray,
+) -> shap.Explanation:
+    """
+    Calculate the SHAP values for model 1.
+
+    Args:
+        sreft (tf.keras.Model): The model for which to calculate SHAP values.
+        feature_names (list[str]): Provide the column names for 'm' and 'cov'. 'm' comes first, followed by 'cov'.
+        cov_scaled (np.ndarray): The scaled covariate values.
+        m_scaled (np.ndarray): The scaled m values.
+
+    Returns:
+        shap.Explanation: The explanation of SHAP values.
+    """
+    input1 = np.concatenate((m_scaled, cov_scaled), axis=-1)
+    explainer_model_1 = shap.Explainer(
+        sreft.model_1,
+        input1,
+        algorithm="permutation",
+        seed=42,
+        feature_names=feature_names,
+    )
+    shap_value_model_1 = explainer_model_1(input1)
+    shap_exp_model_1 = shap.Explanation(
+        shap_value_model_1.values,
+        shap_value_model_1.base_values[0][0],
+        shap_value_model_1.data,
+        feature_names=feature_names,
+    )
+
+    return shap_exp_model_1
+
+
+def load_shap(
+    path_to_shap_file: str,
+) -> shap.Explanation:
+    """
+    Load the specified SHAP binary file and return the SHAP explanations.
+
+    Args:
+        path_to_shap_file (str): The path to the SHAP file.
+
+    Returns:
+        Explanation: The explanation of SHAP values.
+    """
+    with open(path_to_shap_file, "rb") as p:
+        shap_exp = pickle.load(p)
+
+    return shap_exp
+
+def save_shap(path_to_shap_file: str, shap_exp: shap.Explanation) -> None:
+    """
+    Save the SHAP explanations to the specified file.
+
+    Parameters:
+        path_to_shap_file (str): The path to save the SHAP file.
+        shap_exp (shap.Explanation): The SHAP explanations to be saved.
+
+    Returns:
+        None
+    """
+    with open(path_to_shap_file, "wb") as p:
+        pickle.dump(shap_exp, p)
+
+    return None

@@ -13,15 +13,16 @@ VERSION = "0.1.0"
 PYTHON_REQUIRES = ">=3.10"
 
 INSTALL_REQUIRES = [
+    "lifelines>=0.28.0",
+    "matplotlib>=3.7.1",
     "numpy>=1.23.5",
     "pandas>=2.0.3",
+    "scikit-learn>=1.2.2",
+    "scipy>=1.11.2",
+    "seaborn>=0.12.2",
+    "shap>=0.44.1"
     "statsmodels>=0.14.0",
     "tensorflow>=2.10",
-    "scikit-learn>=1.2.2",
-    "matplotlib>=3.7.1",
-    "lifelines>=0.28.0",
-    "seaborn>=0.12.2",
-    "scipy>=1.11.2",
 ]
 
 PACKAGES = find_packages()
