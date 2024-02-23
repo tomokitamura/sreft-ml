@@ -452,7 +452,7 @@ def calculate_offsetT_prediction(
         scaler_y.inverse_transform(sreft(scaled_features)),
         columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
     )
-    df_ = df_.assign(offsetT=offsetT, **y_pred)
+    df_ = df_.reset_index().assign(offsetT=offsetT, **y_pred)
     return df_
 
 
