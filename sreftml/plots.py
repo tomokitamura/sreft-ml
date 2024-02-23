@@ -10,8 +10,8 @@ import sklearn.preprocessing as sp
 import tensorflow as tf
 from scipy.stats import gaussian_kde, linregress
 
-from .utilities import clean_duplicate, n2mfrow
 from .make_demodata import model_sigmoid
+from .utilities import clean_duplicate, n2mfrow
 
 
 def hp_search_plot(
