@@ -20,7 +20,8 @@ INSTALL_REQUIRES = [
     "scikit-learn>=1.2.2",
     "scipy>=1.11.2",
     "seaborn>=0.12.2",
-    "shap>=0.44.1" "statsmodels>=0.14.0",
+    "shap>=0.44.1",
+    "statsmodels>=0.14.0",
     "tensorflow>=2.10",
 ]
 
