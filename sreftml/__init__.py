@@ -1,1 +1,1 @@
-from . import plots, sreftml_model, utilities, make_demodata
+from . import make_demodata, plots, sreftml_model, utilities
