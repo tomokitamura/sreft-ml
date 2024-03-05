@@ -431,6 +431,8 @@ def calculate_offsetT_prediction(
     scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
     scaler_y: sp.StandardScaler,
     name_biomarkers: list[str],
+    getOffsetT: bool = True,
+    getPrediction: bool = True,
 ) -> pd.DataFrame:
     """
     Calculate offsetT and prediction value of biomarkers.
@@ -447,12 +449,18 @@ def calculate_offsetT_prediction(
     """
     df_ = df.copy()
     x_scaled, cov_scaled, m_scaled, y_scaled = scaled_features
-    offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
-    y_pred = pd.DataFrame(
-        scaler_y.inverse_transform(sreft(scaled_features)),
-        columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
-    )
-    df_ = df_.reset_index().assign(offsetT=offsetT, **y_pred)
+
+    if getOffsetT:
+        offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
+        df_ = df_.reset_index(drop=True).assign(offsetT=offsetT)
+    
+    if getPrediction:
+        y_pred = pd.DataFrame(
+            scaler_y.inverse_transform(sreft(scaled_features)),
+            columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
+        )
+        df_ = df_.reset_index(drop=True).assign(**y_pred)
+
     return df_
 
 
