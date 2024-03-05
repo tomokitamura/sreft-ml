@@ -453,7 +453,7 @@ def calculate_offsetT_prediction(
     if getOffsetT:
         offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
         df_ = df_.reset_index(drop=True).assign(offsetT=offsetT)
-    
+
     if getPrediction:
         y_pred = pd.DataFrame(
             scaler_y.inverse_transform(sreft(scaled_features)),
