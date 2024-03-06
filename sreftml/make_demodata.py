@@ -177,6 +177,6 @@ def data_synthesis(
     df = pd.concat([df_info, df_biomarkers, df_covariates], axis=1)
 
     if left_truncate:
-        df = df.query("left_t == 0").drop("left_t", axis=1)
+        df = df.query("left_t == 0").drop("left_t", axis=1).reset_index(drop=True)
 
     return df, params_output
