@@ -1,6 +1,7 @@
 import itertools
 import warnings
 
+from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -102,6 +103,7 @@ def prediction_plot(
     density: bool = False,
     useOffsetT: bool = True,
     ncol_max: int = 4,
+    colormap: ListedColormap = None,
     save_file_path: str | None = None,
 ) -> plt.Figure:
     """
@@ -126,7 +128,8 @@ def prediction_plot(
     n_biomarker = len(name_biomarkers)
     n_covariate = len(name_covariates)
     n_row, n_col = n2mfrow(n_biomarker, ncol_max)
-    cm = plt.colormaps["Set1"]
+    if colormap is None:
+        colormap = plt.colormaps["Set1"]
 
     y_data = df[name_biomarkers].values
     if useOffsetT:
@@ -172,7 +175,7 @@ def prediction_plot(
                 ax.plot(
                     x_model[res * i : res * (i + 1), 0],
                     y_model[res * i : res * (i + 1), k],
-                    c=cm(i),
+                    c=colormap(i),
                     lw=4,
                 )
             ax.set_xlabel("Disease Time (year)")
