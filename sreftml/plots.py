@@ -654,9 +654,9 @@ def merged_permutation_importance_plot(
     """
     bar = pd.DataFrame(
         {
-            "labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers]
+            "labels": [i + j for j in ["_slope", "_intercept"] for i in name_biomarkers]
             + name_covariates,
-            "values": mean_pi.round(3),
+            "mean_pi": mean_pi.round(3),
         }
     )
 
@@ -1053,12 +1053,12 @@ def shap_plots(
     shap.plots.bar(shap_exp_model_1, show=False)
     plt.title("model 1")
     if save_dir_path:
-        plt.savefig(save_dir_path + "shap_bar_model_1.png", transparent=True)
+        plt.savefig(save_dir_path + "shap_bar.png", transparent=True)
 
     beeswarm_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
     shap.plots.beeswarm(shap_exp_model_1, show=False)
     if save_dir_path:
-        plt.savefig(save_dir_path + "shap_beeswarm_model_1.png", transparent=True)
+        plt.savefig(save_dir_path + "shap_beeswarm.png", transparent=True)
 
     n_row, n_col = n2mfrow(shap_exp_model_1.shape[1], ncol_max=ncol_max)
     fig, axs = plt.subplots(
@@ -1081,7 +1081,7 @@ def shap_plots(
         )
     fig.suptitle("model 1")
     if save_dir_path:
-        fig.savefig(save_dir_path + "shap_dependence_model_1.png", transparent=True)
+        fig.savefig(save_dir_path + "shap_dependence.png", transparent=True)
 
     return bar_plot, beeswarm_plot, fig
 
@@ -1106,7 +1106,7 @@ def merged_shap_bar_plot(
     """
     bar = pd.DataFrame(
         {
-            "labels": [i + j for j in ["_slope", "intercept"] for i in name_biomarkers]
+            "labels": [i + j for j in ["_slope", "_intercept"] for i in name_biomarkers]
             + name_covariates,
             "shap": np.mean(abs(shap_exp_model_1.values), axis=0).round(3),
         }
