@@ -1,7 +1,6 @@
 import itertools
 import warnings
 
-from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -9,6 +8,7 @@ import seaborn as sns
 import shap
 import sklearn.preprocessing as sp
 import tensorflow as tf
+from matplotlib.colors import ListedColormap
 from scipy.stats import gaussian_kde, linregress
 
 from .make_demodata import model_sigmoid
