@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import math
 import sklearn.preprocessing as sp
 import tensorflow as tf
+import os
 from scipy.stats import gaussian_kde, linregress
 
 from .utilities import clean_duplicate, n2mfrow, remove_outliers
@@ -544,7 +546,7 @@ def scatter_matrix_plot(
 
 
 def correlation_plot_strata(
-    df: pd.DataFrame, name_biomarkers: list[str], strata: str = "status"
+    df: pd.DataFrame, name_biomarkers: list[str], strata: str = "status", save_file_path: str = None
 ) -> None:
     """
     Generate a heatmap and pairplot of biomarkers for each strata.
@@ -571,7 +573,10 @@ def correlation_plot_strata(
         plt.figure(figsize=(10, 10))
         sns.pairplot(df[df[strata] == i][name_biomarkers].reset_index(drop=True))
 
-    sns.pairplot(df[name_biomarkers + [strata]], hue=strata, diag_kind="hist")
+    fig = sns.pairplot(df[name_biomarkers + [strata]], hue=strata, diag_kind="hist")
+    
+    if save_file_path is not None:
+        fig.savefig(save_file_path, transparent=True)
     return None
 
 
@@ -857,3 +862,108 @@ def prediction_sim_plot(
         fig.savefig(save_file_path, transparent=True, bbox_inches="tight")
 
     return fig
+
+def nyha_vs_offsetT_ver2(
+        df: pd.DataFrame,
+        save_file_path: str,
+        title: str | None = "区間ごとのoffsetT死亡率とNYHA推移", 
+        n: int | None = 6
+        ):
+
+    
+    df_id = df.groupby(["ID"], as_index=False).mean().sort_values(by=["offsetT"])
+
+    num = math.floor(len(df_id)/n)
+    death_num_lis = []
+    death_rate_lis = []
+    NYHA_mean_lis = []
+    x_lis = []
+    box_lis={"facecolor": "white",
+             "boxstyle": "Round",
+             "edgecolor": "black",
+             #"alpha": 0.8
+             }
+    fig, ax1 = plt.subplots()
+    plt.rcParams['figure.subplot.bottom'] = 0.2
+    
+    for i in range(n):
+        if i == n-1:
+            df_n = df_id[num*i:len(df_id)+1]
+            death_num_lis.insert(i+1, len(df_n[df_n["DEATH"] != 0]))
+            death_rate_lis.insert(i+1, len(df_n[df_n["DEATH"] != 0])/len(df_n))
+            NYHA_mean_lis.insert(i+1, df_n["NYHA分類"].mean(numeric_only=True))
+            x_lis.insert(i+1, str(round(min(df_n["offsetT"]), 2)) + " ~ " + str(round(max(df_n["offsetT"]), 2)) + " (年)")
+            plt.text(i, death_rate_lis[i], round(death_rate_lis[i], 3), horizontalalignment="center", bbox=box_lis, fontsize=60/n)
+            continue
+                
+        df_n = df_id[num*i:num*(i+1)]
+        death_num_lis.insert(i+1, len(df_n[df_n["DEATH"] != 0]))
+        death_rate_lis.insert(i+1, len(df_n[df_n["DEATH"] != 0])/len(df_n))
+        NYHA_mean_lis.insert(i+1, df_n["NYHA分類"].mean(numeric_only=True))
+        x_lis.insert(i+1, str(round(min(df_n["offsetT"]), 2)) + " ~ " + str(round(max(df_n["offsetT"]), 2)) + " (年)")
+        plt.text(i, death_rate_lis[i], round(death_rate_lis[i], 3), horizontalalignment="center", bbox=box_lis, fontsize=60/n)
+        
+    ax2 = ax1.twinx()
+    ax1.bar(x_lis, death_rate_lis, alpha=0.8, label="offsetT死亡率")
+    ax2.plot(x_lis, NYHA_mean_lis, c="red", label="平均NYHA推移")
+    plt.title(title)
+    ax1.set_xlabel("各区間の疾患時間")
+    ax1.set_ylabel("offsetT死亡率")
+    ax2.set_ylabel("平均NYHA")
+    ax1.set_xticklabels(x_lis, rotation=45)
+    plt.grid()
+    
+    handler1, label1 = ax1.get_legend_handles_labels()
+    handler2, label2 = ax2.get_legend_handles_labels()
+    ax1.legend(handler1 + handler2, label1 + label2, loc=2, borderaxespad=0.)
+    plt.tight_layout()
+    plt.savefig(save_file_path)
+    plt.show()
+    return fig
+
+def offsetT_offsetT_scatter_plot(
+        
+        offsetT_1_directory_path: str,
+        offsetT_2_directory_path: str,
+        log_caption: str | None
+        ):
+    """
+    Generate a scatter plot which shows a result of offsetT and the another one.
+
+    Args:
+        offsetT_1_directory_path: A directory path of the parent of offsetT_pred.csv.
+        offsetT_2_directory_path: A directory path of the parent of offsetT_pred.csv.
+        log_caption: Log_caption is to be file name. Set any name.
+        
+    Returns:
+        Figure: The created matplotlib figure.
+    """
+    offsetT_1 = pd.read_csv(offsetT_1_directory_path + "/offsetT_pred.csv").rename(columns={"offsetT": "今回のoffsetT"})
+    offsetT_2 = pd.read_csv(offsetT_2_directory_path + "/offsetT_pred.csv").rename(columns={"offsetT": os.path.dirname(offsetT_2_directory_path)})
+    df = offsetT_1.merge(offsetT_2, on=["ID"], how="left")
+    
+    offsetT_offsetT_scatter_plot = single_panel_scatter_plot(
+        df,
+        x_col="今回のoffsetT",
+        y_col=os.path.dirname(offsetT_2_directory_path),
+        hue=None,
+        duplicate_key="ID",
+        density=True,
+        identity=True,
+        save_file_path=offsetT_1_directory_path + "/" + log_caption + "_offsetT_offsetT_scatter.png"
+    )
+
+    offsetT_offsetT_scatter_plot = single_panel_scatter_plot(
+        df,
+        x_col="今回のoffsetT",
+        y_col=os.path.dirname(offsetT_2_directory_path),
+        hue=None,
+        duplicate_key="ID",
+        density=True,
+        identity=True,
+        save_file_path=offsetT_2_directory_path + "/" + log_caption + "_offsetT_offsetT_scatter.png"
+    )
+    
+    return offsetT_offsetT_scatter_plot
+ 
+    

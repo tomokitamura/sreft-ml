@@ -70,7 +70,6 @@ def linear_regression_each_subject(
             else:
                 slopes.append(model.coef_[0])
             intercepts.append(model.intercept_)
-
         results[f"{y}_slope"] = slopes
         results[f"{y}_intercept"] = intercepts
 
@@ -138,7 +137,6 @@ def mixed_effect_linear_regression(
     result = result[
         ["ID"] + [i + j for j in ["_slope", "_intercept"] for i in y_columns]
     ]
-
     return result, models
 
 
@@ -184,7 +182,7 @@ def split_data_for_sreftml(
         if pd.isna(linreg).any().any():
             warnings.warn("Missing value imputation was performed for some features.")
             linreg = linreg.fillna(linreg.mean())
-
+            
     df_ = df_.merge(linreg)
 
     x = df_.TIME
@@ -194,7 +192,7 @@ def split_data_for_sreftml(
     )
     y = df_[name_biomarkers]
 
-    return x, cov, m, y
+    return x, cov, m, y, linreg
 
 
 def np_compute_negative_log_likelihood(
