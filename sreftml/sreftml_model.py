@@ -107,17 +107,19 @@ class SReFT(tf.keras.Model):
 
     def get_config(self):
         config = super(SReFT, self).get_config()
-        config.update({
-            'output_dim': self.output_dim,
-            'latent_dim_model_1': self.latent_dim_model_1,
-            'latent_dim_model_y': self.latent_dim_model_y,
-            'activation_model_1_mid': self.activation_model_1_mid,
-            'activation_model_1_out': self.activation_model_1_out,
-            'activation_model_y_mid': self.activation_model_y_mid,
-            'offsetT_min': self.offsetT_min,
-            'offsetT_max': self.offsetT_max,
-            'random_state': self.random_state
-        })
+        config.update(
+            {
+                "output_dim": self.output_dim,
+                "latent_dim_model_1": self.latent_dim_model_1,
+                "latent_dim_model_y": self.latent_dim_model_y,
+                "activation_model_1_mid": self.activation_model_1_mid,
+                "activation_model_1_out": self.activation_model_1_out,
+                "activation_model_y_mid": self.activation_model_y_mid,
+                "offsetT_min": self.offsetT_min,
+                "offsetT_max": self.offsetT_max,
+                "random_state": self.random_state,
+            }
+        )
         return config
 
     @classmethod
