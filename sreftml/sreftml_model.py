@@ -11,21 +11,6 @@ from . import utilities
 
 
 class SReFT(tf.keras.Model):
-    """
-    A model class that extends tf.keras.Model for SReFT_ML.
-
-    Attributes:
-        activation (str): The activation function to use.
-        activation_offsetT (str): The activation function for offsetT.
-        output_dim (int): The dimension of the output.
-        latent_dim (int): The dimension of the latent variable.
-        offsetT_min (float): The minimum value of offsetT.
-        offsetT_max (float): The maximum value of offsetT.
-        lnvar_y (tf.Variable): The lnvar_y variable.
-        model_1 (tf.keras.Sequential): A keras model for estimating offsetT.
-        model_y (tf.keras.Sequential): A keras model for estimating prediction.
-    """
-
     def __init__(
         self,
         output_dim: int,
@@ -38,20 +23,6 @@ class SReFT(tf.keras.Model):
         offsetT_max: float = np.inf,
         random_state: int | None = None,
     ) -> None:
-        """
-        Initialize a new instance of SReFT_ML.
-
-        Args:
-            output_dim (int, optional): The dimension of the output. Defaults to 4.
-            latent_dim_model_1 (int): The dimension of the latent dimention of model_1.
-            latent_dim_model_1 (int): The dimension of the latent dimention of model_y.
-            activation_model_1_mid (str, optional): The activation function to use. Defaults to "sigmoid".
-            activation_model_1_out (str, optional): The activation function to use. Defaults to "softplus".
-            activation_model_y_mid (str, optional): The activation function to use. Defaults to "tanh".
-            offsetT_min (float, optional): The minimum value of offsetT. Defaults to -np.inf.
-            offsetT_max (float, optional): The maximum value of offsetT. Defaults to np.inf.
-            random_state (int | None, optional): The seed for random number generation. Defaults to None.
-        """
         super(SReFT, self).__init__()
 
         initializer = tf.keras.initializers.GlorotUniform(seed=random_state)
@@ -98,7 +69,7 @@ class SReFT(tf.keras.Model):
                 self.output_dim, activation=None, kernel_initializer=initializer
             )
         )
-        
+        self.random_state = random_state
 
     def call(
         self,
@@ -106,17 +77,6 @@ class SReFT(tf.keras.Model):
         training: bool = False,
         **kwargs,
     ) -> tf.Tensor:
-        """
-        Call the model with the given inputs.
-
-        Args:
-            inputs (tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]): The inputs for the model.
-            training (bool, optional): Whether the model is in training mode. Defaults to False.
-
-        Returns:
-            tf.Tensor: The predicted y values.
-            :param **kwargs:
-        """
         (input_x, input_cov, input_m, input_y) = inputs
         input1 = tf.concat((input_m, input_cov), axis=-1, name="concat")
         offset = self.model_1(input1, training=training)
@@ -136,23 +96,33 @@ class SReFT(tf.keras.Model):
         return y_pred
 
     def build_graph(self, shapes: tuple[int, int, int, int]) -> tf.keras.Model:
-        """
-        Build the computational graph for the model.
-
-        Args:
-            shapes (tuple[int, int, int, int]): The shapes of the inputs.
-
-        Returns:
-            tf.keras.Model: The model with the built computational graph.
-        """
         input_x = tf.keras.layers.Input(shape=shapes[0], name="time")
         input_cov = tf.keras.layers.Input(shape=shapes[1], name="covariate")
         input_m = tf.keras.layers.Input(shape=shapes[2], name="feature")
         input_y = tf.keras.layers.Input(shape=shapes[3], name="observation")
         return tf.keras.Model(
-            inputs=[input_x, input_cov, input_m],
+            inputs=[input_x, input_cov, input_m, input_y],
             outputs=self.call((input_x, input_cov, input_m, input_y)),
         )
+
+    def get_config(self):
+        config = super(SReFT, self).get_config()
+        config.update({
+            'output_dim': self.output_dim,
+            'latent_dim_model_1': self.latent_dim_model_1,
+            'latent_dim_model_y': self.latent_dim_model_y,
+            'activation_model_1_mid': self.activation_model_1_mid,
+            'activation_model_1_out': self.activation_model_1_out,
+            'activation_model_y_mid': self.activation_model_y_mid,
+            'offsetT_min': self.offsetT_min,
+            'offsetT_max': self.offsetT_max,
+            'random_state': self.random_state
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 
 def hp_search_for_sreftml(
