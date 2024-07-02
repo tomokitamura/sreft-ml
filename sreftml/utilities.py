@@ -1,9 +1,13 @@
 import math
+import pickle
 import subprocess
 import warnings
 
+import autograd.numpy as agnp
+import lifelines
 import numpy as np
 import pandas as pd
+import shap
 import sklearn.preprocessing as sp
 import statsmodels.formula.api as smf
 import tensorflow as tf
@@ -317,7 +321,7 @@ def clean_duplicate(
     return df_
 
 
-def compute_permutation_importance(
+def compute_permutation_importance_(
     random_seed: int,
     sreft: tf.keras.Model,
     x_test: np.ndarray,
@@ -327,7 +331,7 @@ def compute_permutation_importance(
     n_sample: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute permutation importance of the model.
+    [Superseded] Compute permutation importance of the model.
 
     Args:
         random_seed (int): The seed for the random number generator.
@@ -374,12 +378,67 @@ def compute_permutation_importance(
     return np.array(mean_pi), np.array(std_pi)
 
 
+def compute_permutation_importance(
+    random_seed: int,
+    sreft: tf.keras.Model,
+    cov_test: np.ndarray,
+    m_test: np.ndarray,
+    n_sample: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute permutation importance of the model.
+
+    Args:
+        random_seed (int): The seed for the random number generator.
+        sreft (tf.keras.Model): The model for which to calculate permutation importance.
+        cov_test (np.ndarray): The covariates test data.
+        m_test (np.ndarray): The m test data.
+        n_sample (int): The number of samples.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The mean and standard deviation of the permutation importance.
+    """
+    rng = np.random.default_rng(random_seed)
+    offestt_pred = sreft.model_1(np.concatenate((m_test, cov_test), axis=-1)).numpy()
+
+    mean_pi = []
+    std_pi = []
+    n_pi = m_test.shape[1] + cov_test.shape[1]
+
+    for i in range(n_pi):
+        pis = []
+        for j in range(n_sample):
+            if i < m_test.shape[1]:
+                m_test_rand = np.copy(m_test)
+                rng.shuffle(m_test_rand[:, i])
+                y_pred_rand = sreft.model_1(
+                    np.concatenate((m_test_rand, cov_test), axis=-1)
+                ).numpy()
+            else:
+                cov_test_rand = np.copy(cov_test)
+                rng.shuffle(cov_test_rand[:, i - m_test.shape[1]])
+                y_pred_rand = sreft.model_1(
+                    np.concatenate((m_test, cov_test_rand), axis=-1)
+                ).numpy()
+
+            nglls_diff = (offestt_pred - y_pred_rand) ** 2
+            temp_pi = np.nanmean(nglls_diff)
+            pis.append(temp_pi)
+
+        mean_pi.append(np.mean(pis))
+        std_pi.append(np.std(pis))
+
+    return np.array(mean_pi), np.array(std_pi)
+
+
 def calculate_offsetT_prediction(
     sreft: tf.keras.Model,
     df: pd.DataFrame,
     scaled_features: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
     scaler_y: sp.StandardScaler,
     name_biomarkers: list[str],
+    getOffsetT: bool = True,
+    getPrediction: bool = True,
 ) -> pd.DataFrame:
     """
     Calculate offsetT and prediction value of biomarkers.
@@ -396,864 +455,224 @@ def calculate_offsetT_prediction(
     """
     df_ = df.copy()
     x_scaled, cov_scaled, m_scaled, y_scaled = scaled_features
-    offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
-    y_pred = pd.DataFrame(
-        scaler_y.inverse_transform(sreft(scaled_features)),
-        columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
-    )
-    df_ = df_.assign(offsetT=offsetT, **y_pred)
+
+    if getOffsetT:
+        offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1))
+        df_ = df_.reset_index(drop=True).assign(offsetT=offsetT)
+
+    if getPrediction:
+        y_pred = pd.DataFrame(
+            scaler_y.inverse_transform(sreft(scaled_features)),
+            columns=[f"{biomarker}_pred" for biomarker in name_biomarkers],
+        )
+        df_ = df_.reset_index(drop=True).assign(**y_pred)
+
     return df_
 
 
-def remove_outliers(data):
+class GompertzFitter(lifelines.fitters.ParametricUnivariateFitter):
+    _fitted_parameter_names = ["lambda_", "c_"]
+
+    def _cumulative_hazard(self, params, times):
+        lambda_, c_ = params
+        return lambda_ / c_ * (agnp.expm1(times * c_))
+
+
+def survival_analysis(
+    df: pd.DataFrame,
+    surv_time: str,
+    event: str,
+    useOffsetT: bool = True,
+    gompertz_init_params: list = [0.1, 0.1],
+) -> dict:
     """
-    Removes outliers from data based on interquartile range.
-    """
-    valid_data = data[~np.isnan(data)]  # Exclude NaN values for the calculation
-    if len(valid_data) == 0:  # Check for empty data
-        return np.array([], dtype=bool)
+    Perform survival analysis and return a dictionary of survival analysis objects.
 
-    Q1 = np.percentile(valid_data, 25)
-    Q3 = np.percentile(valid_data, 75)
-    IQR = Q3 - Q1
-    mask = (data >= Q1 - 1.5 * IQR) & (data <= Q3 + 1.5 * IQR)
-    return mask
 
-
-
-
-def import_if_installed(module_name: str) -> types.ModuleType | None:
-    """
-    Imports a module if it is installed.
-
-    Args:
-        module_name (str): The name of the module to import.
-
-    Returns:
-        module: The imported module. If the module is not installed, None is returned.
-    """
-    if importlib.util.find_spec(module_name) is not None:
-        return importlib.import_module(module_name)
-    else:
-        warnings.warn(f"Module {module_name} is not installed.")
-        return None
-
-
-shap = import_if_installed("shap")
-if shap is not None:
-    import pickle
-
-    def calc_shap_value_model_1(
-        sreft: tf.keras.Model,
-        feature_names: list[str],
-        cov_scaled: np.ndarray,
-        m_scaled: np.ndarray,
-    ) -> shap.Explanation:
-        """
-        Calculate the SHAP values for model 1.
-
-        Args:
-            sreft (tf.keras.Model): The model for which to calculate SHAP values.
-            feature_names (list[str]): Provide the column names for 'm' and 'cov'. 'm' comes first, followed by 'cov'.
-            cov_scaled (np.ndarray): The scaled covariate values.
-            m_scaled (np.ndarray): The scaled m values.
-
-        Returns:
-            shap.Explanation: The explanation of SHAP values.
-        """
-        input1 = np.concatenate((m_scaled, cov_scaled), axis=-1)
-        explainer_model_1 = shap.Explainer(
-            sreft.model_1,
-            input1,
-            algorithm="permutation",
-            seed=42,
-            feature_names=feature_names,
-        )
-        shap_value_model_1 = explainer_model_1(input1)
-        shap_exp_model_1 = shap.Explanation(
-            shap_value_model_1.values,
-            shap_value_model_1.base_values[0][0],
-            shap_value_model_1.data,
-            feature_names=feature_names,
-        )
-
-        return shap_exp_model_1
-
-    def calc_shap_value_model_y(
-        sreft: tf.keras.Model,
-        name_covariates: list[str],
-        x_scaled: np.ndarray,
-        cov_scaled: np.ndarray,
-        m_scaled: np.ndarray,
-    ) -> shap.Explanation:
-        """
-        Calculate the SHAP values for model y.
-
-        Args:
-            sreft (tf.keras.Model): The model for which to calculate SHAP values.
-            name_biomarkers (list[str]): List of baiomarkers' names.
-            name_covariates (list[str]): List of covariates' names.
-            x_scaled (np.ndarray): The scaled x values.
-            cov_scaled (np.ndarray): The scaled covariate values.
-            m_scaled (np.ndarray): The scaled m values.
-
-        Returns:
-            shap.Explanation: The explanation of SHAP values.
-        """
-        offsetT = sreft.model_1(np.concatenate((m_scaled, cov_scaled), axis=-1)).numpy()
-        dis_time = offsetT + x_scaled
-        input2 = np.concatenate((dis_time, cov_scaled), axis=-1)
-
-        explainer_model_y = shap.Explainer(
-            sreft.model_y,
-            input2,
-            algorithm="permutation",
-            seed=42,
-            feature_names=["TIME"] + name_covariates,
-        )
-        shap_value_model_y = explainer_model_y(input2)
-        shap_exp_model_y = shap.Explanation(
-            shap_value_model_y.values,
-            shap_value_model_y.base_values[0][0],
-            shap_value_model_y.data,
-            feature_names=["TIME"] + name_covariates,
-        )
-
-        return shap_exp_model_y
-
-    def load_shap(
-        path_to_shap_file: str,
-    ) -> shap.Explanation:
-        """
-        Load the specified SHAP binary file and return the SHAP explanations.
-
-        Args:
-            path_to_shap_file (str): The path to the SHAP file.
-
-        Returns:
-            Explanation: The explanation of SHAP values.
-        """
-        with open(path_to_shap_file, "rb") as p:
-            shap_exp = pickle.load(p)
-
-        return shap_exp
-
-    def save_shap(path_to_shap_file: str, shap_exp: shap.Explanation) -> None:
-        """
-        Save the SHAP explanations to the specified file.
-
-        Parameters:
-            path_to_shap_file (str): The path to save the SHAP file.
-            shap_exp (shap.Explanation): The SHAP explanations to be saved.
-
-        Returns:
-            None
-        """
-        with open(path_to_shap_file, "wb") as p:
-            pickle.dump(shap_exp, p)
-
-        return None
-
-    def shap_model_1_plot(
-        shap_exp_model_1: shap.Explanation,
-        ncol_max: int = 4,
-        save_dir_path: str | None = None,
-    ) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
-        """
-        Plot the SHAP values of the model 1.
-
-        Args:
-            shap_exp_model_1 (shap.Explanation): The SHAP explanation for the model 1.
-            ncol_max (int, optional): Maximum number of columns for subplots. Defaults to 4.
-            save_dir_path (str, optional): The path where the plot will be saved. Default to None.
-
-        Returns:
-            tuple[plt.Figure, plt.Figure, plt.Figure]: Plot objects for shap bar, beeswarm and dependence plot.
-        """
-
-        bar_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
-        shap.plots.bar(shap_exp_model_1, show=False)
-        plt.title("model 1")
-        if save_dir_path:
-            plt.savefig(save_dir_path + "shap_bar_model_1.png", transparent=True)
-
-        beeswarm_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
-        shap.plots.beeswarm(shap_exp_model_1, show=False)
-        if save_dir_path:
-            plt.savefig(save_dir_path + "shap_beeswarm_model_1.png", transparent=True)
-
-        # plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
-        # shap.plots.waterfall(shap_exp_model_1[0], show=not save_fig)
-        # if save_dir_path:
-        #     plt.savefig(save_dir_path + "shap_waterfall_model_1.png", transparent=True)
-        #     plt.show()
-
-        n_row, n_col = n2mfrow(shap_exp_model_1.shape[1], ncol_max=ncol_max)
-        fig, axs = plt.subplots(
-            n_row,
-            n_col,
-            figsize=(n_col * 4, n_row * 3),
-            tight_layout=True,
-            dpi=300,
-        )
-        for k, ax in enumerate(axs.flat):
-            if k >= shap_exp_model_1.shape[1]:
-                ax.axis("off")
-                continue
-            shap.plots.scatter(
-                shap_exp_model_1[:, k],
-                color=shap_exp_model_1,
-                x_jitter=0.01,
-                ax=ax,
-                show=False,
-            )
-        fig.suptitle("model 1")
-        if save_dir_path:
-            fig.savefig(save_dir_path + "shap_dependence_model_1.png", transparent=True)
-
-        return bar_plot, beeswarm_plot, fig
-
-    def shap_model_y_plot(
-        shap_exp_model_y: shap.Explanation,
-        name_biomarkers: list[str],
-        name_covariates: list[str],
-        ncol_max: int = 4,
-        save_dir_path: str | None = None,
-    ) -> tuple[plt.Figure, plt.Figure]:
-        """
-        Plot SHAP model Y.
-
-        Args:
-            shap_exp_model_y (shap.Explanation): SHAP explanation model for Y.
-            name_biomarkers (list[str]): List of biomarker names.
-            name_covariates (list[str]): List of covariate names.
-            ncol_max (int, optional): Maximum number of columns for subplots. Defaults to 4.
-            save_dir_path (str, optional): The path where the plot will be saved. Default to None.
-
-        Returns:
-            tuple[plt.Figure, plt.Figure, plt.Figure]: Plot objects for shap bar plot.
-        """
-        n_biomarker = len(name_biomarkers)
-        # n_covariate = len(name_covariates)
-        n_row, n_col = n2mfrow(n_biomarker, ncol_max=ncol_max)
-
-        shap_data = np.mean(abs(shap_exp_model_y.values), axis=0)
-        bar_plot_fig, bar_plot_axs = plt.subplots(
-            n_row,
-            n_col,
-            figsize=(n_col * 3, n_row * 3),
-            sharex=True,
-            tight_layout=True,
-            dpi=300,
-        )
-        for k, ax in enumerate(bar_plot_axs.flat):
-            if k >= n_biomarker:
-                ax.axis("off")
-                continue
-
-            ax.barh(["TIME"] + name_covariates, shap_data[:, k])
-            ax.set_title(name_biomarkers[k])
-            ax.set_xlabel("mean(|SHAP value|)")
-            ax.invert_yaxis()
-        bar_plot_fig.suptitle("model y")
-        if save_dir_path:
-            plt.savefig(save_dir_path + "shap_bar_model_y.png", transparent=True)
-
-        shap_data_overall = np.mean(abs(shap_exp_model_y.values), axis=(0, 2))
-        bar_all_plot = plt.figure(dpi=300, tight_layout=True)
-        plt.barh(["TIME"] + name_covariates, shap_data_overall)
-        plt.xlabel("mean(|SHAP value|)")
-        plt.gca().invert_yaxis()
-        plt.suptitle("model y")
-        if save_dir_path:
-            plt.savefig(
-                save_dir_path + "shap_bar_model_y_overall.png", transparent=True
-            )
-
-        # for i in range(n_biomarker):
-        #     tmp_beeswarm_plot = plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
-        #     shap.plots.beeswarm(shap_exp_model_y[:, :, i], show=False)
-        #     plt.title(name_biomarkers[i])
-        #     if save_dir_path:
-        #         plt.savefig(
-        #             save_dir_path + "shap_beeswarm_model_y_" + name_biomarkers[i] + ".png",
-        #             transparent=True,
-        #         )
-
-        # for i in range(n_biomarker):
-        #     plt.figure(figsize=(5, 5), dpi=300, tight_layout=True)
-        #     shap.plots.waterfall(shap_exp_model_y[0, :, i], show=not save_fig)
-        #     plt.title(name_biomarkers[i])
-        #     if save_dir_path:
-        #         plt.savefig(
-        #             save_dir_path + "shap_waterfall_model_y_" + name_biomarkers[i] + ".png",
-        #             transparent=True,
-        #         )
-
-        # for i in range(n_covariate + 1):
-        #     fig, axs = plt.subplots(
-        #         n_row,
-        #         n_col,
-        #         figsize=(n_col * 4, n_row * 3),
-        #         tight_layout=True,
-        #         dpi=300,
-        #     )
-        #     for k, ax in enumerate(axs.flat):
-        #         if k >= n_biomarker:
-        #             ax.axis("off")
-        #             continue
-        #         shap.plots.scatter(
-        #             shap_exp_model_y[:, i, k],
-        #             color=shap_exp_model_y[:, :, k],
-        #             x_jitter=0.01,
-        #             title=name_biomarkers[k],
-        #             ax=ax,
-        #             show=False,
-        #         )
-        #     fig.suptitle("model y")
-        #     if save_dir_path:
-        #         name_input2 = ["TIME"] + name_covariates
-        #         fig.savefig(
-        #             save_dir_path + "shap_dependence_model_y_" + name_input2[i] + ".png",
-        #             transparent=True,
-        #         )
-
-        return bar_plot_fig, bar_all_plot
-
-
-lifelines = import_if_installed("lifelines")
-if lifelines is not None:
-    import autograd.numpy as agnp
-
-    class GompertzFitter(lifelines.fitters.ParametricUnivariateFitter):
-        _fitted_parameter_names = ["lambda_", "c_"]
-
-        def _cumulative_hazard(self, params, times):
-            lambda_, c_ = params
-            return lambda_ / c_ * (agnp.expm1(times * c_))
-
-    def survival_analysis(
-        df: pd.DataFrame, surv_time: str, event: str, useOffsetT: bool = True
-    ) -> dict:
-        """
-        Perform survival analysis and return a dictionary of survival analysis objects.
-
-
-        If the survival time contains 0 or less, the survival time is converted so that the minimum value is 0.00001.
-
-        Args:
-            df (pd.DataFrame): Input DataFrame.
-            surv_time (str): Column name of the survival time in df.
-            event (str): Column name of the event in df.
-            useOffsetT (bool, optional): Determines whether to use offsetT for the analysis. Defaults to True.
-
-        Returns:
-            dict: A dictionary of survival analysis objects.
-        """
-        fitters = [
-            (lifelines.KaplanMeierFitter, "kmf", "KaplanMeier"),
-            (lifelines.NelsonAalenFitter, "naf", "NelsonAalen"),
-            (lifelines.ExponentialFitter, "epf", "Exponential"),
-            (lifelines.WeibullFitter, "wbf", "Weibull"),
-            (GompertzFitter, "gpf", "Gompertz"),
-            (lifelines.LogLogisticFitter, "llf", "LogLogistic"),
-            (lifelines.LogNormalFitter, "lnf", "LogNormal"),
-        ]
-        fit_model = {"title": event}
-        if useOffsetT:
-            df_surv = df[["ID", "offsetT", surv_time, event]].dropna().drop_duplicates()
-
-            if df_surv["offsetT"].min() < 0:
-                raise ValueError("offsetT must be greater than or equal to 0.")
-
-            for fitter_class, key, label in fitters:
-                if key == "gpf":
-                    fit_model[key] = fitter_class(label=label).fit(
-                        durations=df_surv["offsetT"] + df_surv[surv_time],
-                        event_observed=df_surv[event],
-                        entry=df_surv["offsetT"],
-                        initial_point=[0.1, 0.1],
-                    )
-                else:
-                    fit_model[key] = fitter_class(label=label).fit(
-                        durations=df_surv["offsetT"] + df_surv[surv_time],
-                        event_observed=df_surv[event],
-                        entry=df_surv["offsetT"],
-                    )
-        else:
-            df_surv = df[["ID", surv_time, event]].dropna().drop_duplicates()
-            for fitter_class, key, label in fitters:
-                fit_model[key] = fitter_class(label=label).fit(
-                    durations=df_surv[surv_time], event_observed=df_surv[event]
-                )
-
-        return fit_model
-
-    def surv_analysis_plot(
-        fit_model: dict,
-        ci_show: bool = True,
-        only_best: bool = True,
-        title: str | None = None,
-        xlabel: str = "Disease Time (year)",
-        save_dir_path: str | None = None,
-    ) -> tuple[plt.Figure, plt.Figure, plt.Figure]:
-        """
-        Generate survival analysis plot.
-
-        Args:
-            fit_model (dict): A dictionary of survival analysis objects.
-            ci_show (bool, optional): Whether to show confidence intervals. Defaults to True.
-            only_best (bool, optional): Whether to plot only the best model. Defaults to True.
-            title (str | None, optional): Title for each plot. If None, the title from fit_model is used.
-            xlabel (str, optional): X-axis label for each plot. Defaults to "Disease Time (year)".
-            save_dir_path (str, optional): The path where the plot will be saved. Default to None.
-
-        Returns:
-            tuple[plt.Figure, plt.Figure, plt.Figure]: Plot objects for the survival function, cumulative hazard function, and hazard function.
-        """
-        if title is None:
-            title = fit_model["title"]
-
-        fit_model_parametric = {
-            key: value
-            for key, value in fit_model.items()
-            if key not in ["title", "kmf", "naf"]
-        }
-        if only_best:
-            aics = [i.AIC_ for i in fit_model_parametric.values()]
-            best_model = list(fit_model_parametric.keys())[aics.index(min(aics))]
-            fit_model_parametric = {best_model: fit_model_parametric[best_model]}
-
-        surv_plot = plt.figure(figsize=(5, 5), dpi=300)
-        fit_model["kmf"].plot_survival_function(ci_show=ci_show, lw=2)
-        [
-            k.plot_survival_function(ci_show=ci_show, lw=2)
-            for k in fit_model_parametric.values()
-        ]
-        plt.xlabel(xlabel)
-        plt.ylabel("Survival Function")
-        plt.title(title)
-        if save_dir_path:
-            plt.savefig(save_dir_path + "surv_func.png", transparent=True)
-
-        cumhaz_plot = plt.figure(figsize=(5, 5), dpi=300)
-        fit_model["naf"].plot_cumulative_hazard(ci_show=ci_show, lw=2)
-        [
-            k.plot_cumulative_hazard(ci_show=ci_show, lw=2)
-            for k in fit_model_parametric.values()
-        ]
-        plt.xlabel(xlabel)
-        plt.ylabel("Cumlative Hazard Function")
-        plt.title(title)
-        if save_dir_path:
-            plt.savefig(save_dir_path + "cumhaz_func.png", transparent=True)
-
-        haz_plot = plt.figure(figsize=(5, 5), dpi=300)
-        fit_model["naf"].plot_hazard(bandwidth=2, ci_show=ci_show, lw=2)
-        [k.plot_hazard(ci_show=ci_show, lw=2) for k in fit_model_parametric.values()]
-        plt.xlabel(xlabel)
-        plt.ylabel("Hazard Function")
-        plt.title(title)
-        if save_dir_path:
-            plt.savefig(save_dir_path + "haz_func.png", transparent=True)
-
-        return surv_plot, cumhaz_plot, haz_plot
-    
-    def calculate_c_index(df, time_col, event_col, predicted_col, id_col):
-        """
-        Calculate the concordance index (c-index) for each subject in the dataframe.
-    
-        Parameters:
-            df (pd.DataFrame): Input dataframe containing time, event, predicted scores, and subject ID.
-            time_col (str): Column name for the observed survival times or event times.
-            event_col (str): Column name for the event indicator (1 if event occurred, 0 if censored).
-            predicted_col (str): Column name for the predicted risk scores.
-            id_col (str): Column name for the subject ID.
-    
-        Returns:
-            float: The overall concordance index (c-index).
-        """
-        unique_ids = df[id_col].unique()
-        all_event_times = []
-        all_predicted_scores = []
-        all_events = []
-    
-        for uid in unique_ids:
-            subject_data = df[df[id_col] == uid]
-            event_times = subject_data[time_col].values
-            predicted_scores = subject_data[predicted_col].values
-            events = subject_data[event_col].values
-    
-            all_event_times.extend(event_times)
-            all_predicted_scores.extend(predicted_scores)
-            all_events.extend(events)
-    
-        return concordance_index(all_event_times, all_predicted_scores, all_events)
-    
-
-
-
-minepy = import_if_installed("minepy")
-
-
-def scatter_matrix_plot_extra(
-    df: pd.DataFrame, upper_type: str, save_file_path: str | None = None
-) -> sns.axisgrid.PairGrid:
-    """
-    Plot correlation matrix.
+    If the survival time contains 0 or less, the survival time is converted so that the minimum value is 0.00001.
 
     Args:
         df (pd.DataFrame): Input DataFrame.
-        upper_type (str): Type of correlation calculation. ("corr" or "mic")
-        save_file_path (str, optional): The path where the plot will be saved. Default to None.
+        surv_time (str): Column name of the survival time in df.
+        event (str): Column name of the event in df.
+        useOffsetT (bool, optional): Determines whether to use offsetT for the analysis. Defaults to True.
 
     Returns:
-        sns.axisgrid.PairGrid: PairGrid object with the correlation plot.
+        dict: A dictionary of survival analysis objects.
     """
+    fitters = [
+        (lifelines.KaplanMeierFitter, "kmf", "KaplanMeier"),
+        (lifelines.NelsonAalenFitter, "naf", "NelsonAalen"),
+        (lifelines.ExponentialFitter, "epf", "Exponential"),
+        (lifelines.WeibullFitter, "wbf", "Weibull"),
+        (GompertzFitter, "gpf", "Gompertz"),
+        (lifelines.LogLogisticFitter, "llf", "LogLogistic"),
+        (lifelines.LogNormalFitter, "lnf", "LogNormal"),
+    ]
+    fit_model = {"title": event}
+    if useOffsetT:
+        df_surv = df[["ID", "offsetT", surv_time, event]].dropna().drop_duplicates()
 
-    def corrfunc(x, y, upper_type, **kwds):
-        ax = plt.gca()
-        ax.tick_params(bottom=False, top=False, left=False, right=False)
-        sns.despine(ax=ax, bottom=True, top=True, left=True, right=True)
-        if upper_type == "corr":
-            r = x.corr(y, method="pearson")
-            norm = plt.Normalize(-1, 1)
-        elif upper_type == "mic":
-            mine = minepy.MINE()
-            mine.compute_score(x, y)
-            r = mine.mic()
-            norm = plt.Normalize(0, 1)
-        facecolor = plt.get_cmap("seismic")(norm(r))
-        ax.set_facecolor(facecolor)
-        ax.set_alpha(0)
-        lightness = (max(facecolor[:3]) + min(facecolor[:3])) / 2
-        ax.annotate(
-            f"{r:.2f}",
-            xy=(0.5, 0.5),
-            xycoords=ax.transAxes,
-            color="white" if lightness < 0.7 else "black",
-            size=26,
-            ha="center",
-            va="center",
-        )
+        if df_surv["offsetT"].min() < 0:
+            raise ValueError("offsetT must be greater than or equal to 0.")
 
-    if upper_type not in ["corr", "mic"]:
-        raise ValueError(
-            "The upper_type you specified is not appropriate. Please specify 'corr' or 'mic'."
-        )
-    if upper_type == "mic" and minepy is None:
-        raise ValueError("'mic' is selected, but minepy is not installed.")
-    g = sns.PairGrid(df)
-    g.map_diag(sns.histplot, kde=False)
-    g.map_lower(plt.scatter, s=2)
-    g.map_upper(corrfunc, upper_type=upper_type)
-    g.figure.suptitle(upper_type, fontsize=26)
-    g.figure.tight_layout()
-
-    if save_file_path:
-        g.savefig(save_file_path)
-
-    return g
-
-
-def r_squared_plot(
-    df: pd.DataFrame,
-    name_biomarkers: list[str],
-    isSort: bool = True,
-    cutoff: float = 0.1,
-    save_file_path: str | None = None,
-) -> plt.Figure:
-    """
-    Generate a horizontal bar plot displaying the R-squared values of biomarkers.
-
-    Args:
-        df (pd.DataFrame): DataFrame containing the biomarker data.
-        name_biomarkers (list[str]): List of column names representing the biomarkers.
-        isSort (bool, optional): If True, sort biomarkers by R-squared values. Default is True.
-        cutoff (float, optional): Cutoff value for highlighting specific R-squared values. Biomarkers with R-squared values greater than or equal to cutoff will be highlighted. Default is 0.1.
-        save_file_path (str, optional): The path where the plot will be saved. Default to None.
-
-    Returns:
-    - fig (plt.Figure): Matplotlib figure object representing the generated plot.
-    """
-    res = df[name_biomarkers].values - df.filter(like="_pred", axis=1).values
-    res_var = np.nanvar(res, axis=0)
-    df_var = np.nanvar(df[name_biomarkers].values, axis=0)
-    r_squared = 1 - res_var / df_var
-
-    cm = plt.get_cmap("tab10")
-    fig = plt.figure(dpi=300, tight_layout=True)
-    if cutoff > 0:
-        plt.axvline(x=cutoff, ls="--", c="black")
-        colors = [cm(1) if x >= cutoff else cm(0) for x in r_squared]
-    else:
-        colors = [cm(0) for _ in range(len(r_squared))]
-
-    if isSort:
-        rank = np.argsort(r_squared)
-        plt.barh(
-            [name_biomarkers[i] for i in rank],
-            r_squared[rank],
-            color=[colors[i] for i in rank],
-        )
-    else:
-        plt.barh(name_biomarkers, r_squared, color=colors)
-
-    plt.xlabel("r_squared")
-
-    if save_file_path:
-        plt.savefig(save_file_path, transparent=True)
-
-    return fig
-
-def All_raw_data_plots(df: pd.DataFrame,
-                   name_biomarkers: list,
-                   group_column_name: str | None = "ARM",
-                   placebo_group_name: str | None = "プラセボ群",
-                   dose_group_name: str | None = "治療群",
-                   placebo_group_number: int | None = 1,
-                   dose_group_number: int | None = 0,
-                   density: bool=True,
-                   title: str | None = None,
-                   save_fig: bool=True, 
-                   save_path: str | None = None
-                   ):
-
-
-    ave_df_0 = df[df[group_column_name] == dose_group_number].groupby("TIME", as_index=False).mean(numeric_only=True)
-    ave_df_1 = df[df[group_column_name] == placebo_group_number].groupby("TIME", as_index=False).mean(numeric_only=True)
-
-    n_row, n_col = n2mfrow(len(name_biomarkers), ncol_max=5)
-    fig, axs = plt.subplots(n_row, n_col, figsize = (n_col*5, n_row*5+1))
-    for i, ax in enumerate(axs.flatten()):
-        if i>=len(name_biomarkers):
-            ax.axis("off")
-            continue
-        ax.plot(ave_df_0.TIME, ave_df_0[name_biomarkers[i]], color="#ff0000", lw=3, label="強化療法群")
-        ax.plot(ave_df_1.TIME, ave_df_1[name_biomarkers[i]], color="#000080", lw=3, label="プラセボ群")
-        
-        df_ = df[["TIME", name_biomarkers[i]]].dropna(subset=["TIME", name_biomarkers[i]])
-        
-        x_data_tmp = df_.TIME.values
-        y_data_tmp = df_[name_biomarkers[i]].values
-
-        if density:
-            x_ = x_data_tmp
-            y_ = y_data_tmp
-            if np.var(x_) == 0:
-                z = gaussian_kde(y_)(y_)
+        for fitter_class, key, label in fitters:
+            if key == "gpf":
+                fit_model[key] = fitter_class(label=label).fit(
+                    durations=df_surv["offsetT"] + df_surv[surv_time],
+                    event_observed=df_surv[event],
+                    entry=df_surv["offsetT"],
+                    initial_point=gompertz_init_params,
+                )
             else:
-                xy = np.vstack([x_, y_])
-                z = gaussian_kde(xy)(xy)
-            idx = z.argsort()
-            ax.scatter(x_[idx], y_[idx], c=z[idx], s=2, label="_nolegend_")
-        else:
-            ax.scatter(
-                x_data_tmp, y_data_tmp[:, i], c="silver", s=2, label="_nolegend_"
+                fit_model[key] = fitter_class(label=label).fit(
+                    durations=df_surv["offsetT"] + df_surv[surv_time],
+                    event_observed=df_surv[event],
+                    entry=df_surv["offsetT"],
+                )
+    else:
+        df_surv = df[["ID", surv_time, event]].dropna().drop_duplicates()
+        for fitter_class, key, label in fitters:
+            fit_model[key] = fitter_class(label=label).fit(
+                durations=df_surv[surv_time], event_observed=df_surv[event]
             )
-        ax.fill_between(ave_df_0.TIME, ave_df_0[name_biomarkers[i]] - np.std(ave_df_0[name_biomarkers[i]]), ave_df_0[name_biomarkers[i]] + np.std(ave_df_0[name_biomarkers[i]]), alpha=0.2, color="red")
-        ax.fill_between(ave_df_1.TIME, ave_df_1[name_biomarkers[i]] - np.std(ave_df_1[name_biomarkers[i]]), ave_df_1[name_biomarkers[i]] + np.std(ave_df_1[name_biomarkers[i]]), alpha=0.2, color="blue")
-        ax.set_title(name_biomarkers[i], fontsize=20, fontweight=1000)
-        dif = max(ave_df_0[name_biomarkers[i]].max(), ave_df_1[name_biomarkers[i]].max()) - min(ave_df_0[name_biomarkers[i]].min(), ave_df_1[name_biomarkers[i]].min())
-        ax.set_ylim(min(ave_df_0[name_biomarkers[i]].min(), ave_df_1[name_biomarkers[i]].min()) - dif, max(ave_df_0[name_biomarkers[i]].max(), ave_df_1[name_biomarkers[i]].max()) + dif)
-        ax.legend(loc="best", fontsize=10)
-        plt.rcParams["font.size"] = 20
-    plt.suptitle(title, fontsize=30, fontweight=1000)
-    plt.tight_layout()
-    plt.show()
-    if save_fig:
-        fig.savefig(save_path + "All_care_plots.png", transparent=True, bbox_inches="tight")
-    
-    return fig
+
+    return fit_model
 
 
-def each_data_count(df: pd.DataFrame,
-                   name_biomarkers: list,
-                   plot: bool = True,
-                   save_path: str | None = None,
-                   group_column_name: str | None = "ARM",
-                   placebo_group_number: int | None = 1,
-                   dose_group_number: int | None = 0
-                   ):
-    
-    def add_value_label(x_list, y_list):
-        for i in range(1, len(x_list) + 1):
-            ax.text(i - 1, 0.7*y_list[i - 1], y_list[i - 1], ha="center", fontsize=8, fontweight="bold", bbox={"facecolor" : "white","boxstyle" : "Round",})
-    
-    for p in range(2):
-        
-        tmp_df = pd.DataFrame(df[df[group_column_name] == df.groupby(["TIME"], as_index=False).count()])
-        tmp_df_index_lis = list(map(str, [round(list(tmp_df["TIME"])[n], 2) for n in range(len(tmp_df["TIME"]))]))
-        tmp_df = tmp_df[name_biomarkers]
-    
-        n_row, n_col = n2mfrow(len(name_biomarkers), ncol_max=5)
-        fig, axs = plt.subplots(n_row, n_col, figsize = (20, 15))
-
-    for i, ax in enumerate(axs.flatten()):
-        if i>=len(name_biomarkers):
-            ax.axis("off")
-            continue
-        ax.bar(tmp_df_index_lis, tmp_df[name_biomarkers[i]], width=0.4)
-        ax.set_xlabel("Time Point (year)", fontdict={"fontsize":15, "fontweight":"bold"})
-        ax.set_title(name_biomarkers[i], fontsize=20)
-        ax.tick_params(labelsize=8)
-        ax.set_ylim(0, 900)
-        if plot:
-            ax.plot(tmp_df_index_lis, tmp_df[name_biomarkers[i]])
-        add_value_label(tmp_df_index_lis, list(tmp_df[name_biomarkers[i]]))
-    fig.suptitle("各タイムポイントにおける患者数", fontsize=25)
-    fig.autofmt_xdate(rotation=45)
-    plt.tight_layout()
-
-    if save_path!= None:
-        fig.savefig(save_path + "each_data_count.png", transparent=True, bbox_inches="tight", dpi=600)
-    
-    return fig
-
-
-
-def between_group_comparison_plot(
-    df, 
-    title='NYHA分類/offsetTをNYHAと同じ例数ずつ分けた時の分布', 
-    xlabel='NYHA分類', 
-    ylabel='死亡率', 
-    legend_x='NYHA分類', 
-    legend_y='offsetT', 
-    save_fig=False, 
-    save_path='NYHA_offsetT_bar_plot.png'
+def multi_column_filter(
+    df: pd.DataFrame,
+    upper_lim: dict[str, float] = None,
+    lower_lim: dict[str, float] = None,
+    IQR_filter: list = None,
 ):
     """
-    Generate a moltarity comparison of NYHA and offsetT.
+    Applies limits and IQR filtering on DataFrame columns.
+
+    Operations:
+        NaN substitution for values outside the specified upper and lower limits.
+        IQR-based outlier removal in specified columns.
 
     Args:
-        df (pd.DataFrame): DataFrame containing the biomarker data.
-        title The title of output graph.
-        xlabel The name of x-label.
-        ylabel The name of y-label.
-        legend_x The displayed legend for x-label.
-        legend_y The displayed legend for y-label.
-        save_fig A bool value which to save or not.
-        save_path (str, optional): The path where the plot will be saved. Default to None.
+        df (pd.DataFrame): The DataFrame to be filtered.
+        upper_lim (dict[str, float], optional): Upper limits per column.
+        lower_lim (dict[str, float], optional): Lower limits per column.
+        IQR_filter (list, optional): Columns for IQR outlier detection
 
     Returns:
-    - fig (plt.Figure): Matplotlib figure object representing the generated plot.
+        pd.DataFrame: DataFrame after applying the defined filters.
+
+    Notes:
+        Overlapping `upper_lim`/`lower_lim` and `IQR_filter` keys cause warnings
+        and filtering by `upper_lim`/`lower_lim`.
     """
-    # NYHA2とNYHA3の患者をそれぞれ2つのグループに分割
-    def split_nyha_groups(df, nyha_value, group_labels):
-        subset = df[df['NYHA分類'] == nyha_value]
-        subset = subset.sort_values(by='NTproBNP_log')
-        n = len(subset) // 2
-        remainder = len(subset) % 2
-        groups = []
-        for i in range(2):
-            size = n + (1 if i < remainder else 0)
-            groups.append(subset.iloc[:size])
-            subset = subset.iloc[size:]
-        for group, label in zip(groups, group_labels):
-            df.loc[group.index, 'NYHA分類'] = label
+    df_filtered = df.copy()
+    if upper_lim is None:
+        upper_lim = {}
+    if lower_lim is None:
+        lower_lim = {}
+    if IQR_filter is None:
+        IQR_filter = []
 
-    split_nyha_groups(df, 2, ['2', '2+'])
-    split_nyha_groups(df, 3, ['3', '3+'])
+    if upper_lim:
+        for k, v in upper_lim.items():
+            df_filtered.loc[df_filtered[k] > v, k] = np.nan
+        overlap_upper_IQR = set(upper_lim.keys()) & set(IQR_filter)
+        if overlap_upper_IQR:
+            warnings.warn(
+                f"The columns {overlap_upper_IQR} were present in both upper_lim and IQR_filter, therefore they were filtered using the values from upper_lim."
+            )
 
-    # データのグループ化
-    df_baseline = df.drop_duplicates(subset="ID")
-    groups = ['1.0', '2', '2+', '3', '3+', '4.0']
+    if lower_lim:
+        for k, v in lower_lim.items():
+            df_filtered.loc[df_filtered[k] < v, k] = np.nan
+        overlap_lower_IQR = set(lower_lim.keys()) & set(IQR_filter)
+        if overlap_lower_IQR:
+            warnings.warn(
+                f"The columns {overlap_lower_IQR} were present in both lower_lim and IQR_filter, therefore they were filtered using the values from lower_lim."
+            )
 
-    # 各グループのデータを確認
-    for group in groups:
-        print(f"Group {group}:")
-        print(df_baseline[df_baseline['NYHA分類'] == group].head())
+    if IQR_filter:
+        IQR_exclusive = list(
+            set(IQR_filter) - set(upper_lim.keys()) - set(lower_lim.keys())
+        )
+        q1 = df_filtered.quantile(0.25)
+        q3 = df_filtered.quantile(0.75)
+        iqr = q3 - q1
+        df_filtered[IQR_exclusive] = df_filtered[IQR_exclusive].mask(
+            (df_filtered < q1 - 1.5 * iqr) | (df_filtered > q3 + 1.5 * iqr), np.nan
+        )
 
-    # NYHA分類カラムを文字列型に変換
-    df_baseline['NYHA分類'] = df_baseline['NYHA分類'].astype(str)
+    return df_filtered
 
-    # NYHA分類ごとの人数と死亡者数を計算
-    nyha_counts = [len(df_baseline[df_baseline['NYHA分類'] == group]) for group in groups]
-    nyha_deaths = [
-        len(df_baseline[(df_baseline['NYHA分類'] == group) & (df_baseline['DEATH'] == 1)]) for group in groups
-    ]
 
-    # 各グループの人数と死亡者数を確認
-    print("NYHA counts:", nyha_counts)
-    print("NYHA deaths:", nyha_deaths)
+def calc_shap_explanation(
+    sreft: tf.keras.Model,
+    feature_names: list[str],
+    cov_scaled: np.ndarray,
+    m_scaled: np.ndarray,
+) -> shap.Explanation:
+    """
+    Calculate the SHAP values for model 1.
 
-    # offsetTを用いた人数と死亡者数の計算
-    offsetT_df = df_baseline.sort_values('offsetT')
-    offsetT_counts = []
-    offsetT_deaths = []
-    offsetT_ranges = []
-    cumulative_count = 0
+    Args:
+        sreft (tf.keras.Model): The model for which to calculate SHAP values.
+        feature_names (list[str]): Provide the column names for 'm' and 'cov'. 'm' comes first, followed by 'cov'.
+        cov_scaled (np.ndarray): The scaled covariate values.
+        m_scaled (np.ndarray): The scaled m values.
 
-    for count in nyha_counts:
-        if count > 0:
-            group = offsetT_df.iloc[cumulative_count:cumulative_count + count]
-            offsetT_counts.append(len(group))
-            offsetT_deaths.append(len(group[group['DEATH'] == 1]))
-            offsetT_ranges.append(f"{group['offsetT'].min():.2f}-{group['offsetT'].max():.2f}")
-            cumulative_count += count
-        else:
-            offsetT_counts.append(0)
-            offsetT_deaths.append(0)
-            offsetT_ranges.append("N/A")
+    Returns:
+        shap.Explanation: The explanation of SHAP values.
+    """
+    input1 = np.concatenate((m_scaled, cov_scaled), axis=-1)
+    explainer_model_1 = shap.Explainer(
+        sreft.model_1,
+        input1,
+        algorithm="permutation",
+        seed=42,
+        feature_names=feature_names,
+    )
+    shap_value_model_1 = explainer_model_1(input1)
+    shap_exp_model_1 = shap.Explanation(
+        shap_value_model_1.values,
+        shap_value_model_1.base_values[0][0],
+        shap_value_model_1.data,
+        feature_names=feature_names,
+    )
 
-    # 各グループのoffsetTによる人数と死亡者数を確認
-    print("OffsetT counts:", offsetT_counts)
-    print("OffsetT deaths:", offsetT_deaths)
-    print("OffsetT ranges:", offsetT_ranges)
+    return shap_exp_model_1
 
-    # 死亡率の計算
-    nyha_death_rates = [death / count if count > 0 else 0 for death, count in zip(nyha_deaths, nyha_counts)]
-    offsetT_death_rates = [death / count if count > 0 else 0 for death, count in zip(offsetT_deaths, offsetT_counts)]
 
-    # 死亡率の確認
-    print("NYHA death rates:", nyha_death_rates)
-    print("OffsetT death rates:", offsetT_death_rates)
+def load_shap(
+    path_to_shap_file: str,
+) -> shap.Explanation:
+    """
+    Load the specified SHAP binary file and return the SHAP explanations.
 
-    # カイ二乗検定の実行
-    chi2, p, dof, expected = stats.chi2_contingency([
-        nyha_deaths, 
-        offsetT_deaths
-    ])
+    Args:
+        path_to_shap_file (str): The path to the SHAP file.
 
-    print(f"カイ二乗値: {chi2}, p値: {p}, 自由度: {dof}")
+    Returns:
+        Explanation: The explanation of SHAP values.
+    """
+    with open(path_to_shap_file, "rb") as p:
+        shap_exp = pickle.load(p)
 
-    # グラフの描画
-    fig, ax = plt.subplots(figsize=(10, 8))
-    x = range(len(groups))
-    width = 0.35
+    return shap_exp
 
-    ax.bar([p - width/2 for p in x], nyha_death_rates, width, label=legend_x)
-    ax.bar([p + width/2 for p in x], offsetT_death_rates, width, label=legend_y)
 
-    ax.set_xlabel(xlabel, fontsize=15, fontweight="bold")
-    ax.set_ylabel(ylabel, fontsize=15, fontweight="bold")
-    ax.set_title(title, fontsize=20)
-    ax.set_xticks(x, fontsize=15)
-    ax.set_xticklabels(groups)
-    ax.legend(fontsize=20)
+def save_shap(path_to_shap_file: str, shap_exp: shap.Explanation) -> None:
+    """
+    Save the SHAP explanations to the specified file.
 
-    # グラフの下に人数とoffsetTの範囲を表示
-    for i in range(len(groups)):
-        ax.text(i, -0.15, f'{nyha_counts[i]} 例', ha='center', va='bottom', fontsize=10, fontweight="bold")
-        ax.text(i, -0.05, f'{offsetT_ranges[i]} 年', ha='center', va='top', fontsize=10, rotation=30)
-    ax.text(-0.1, -0.15, "疾患時間範囲",
-            transform=ax.transAxes,
-            fontsize=12)
-    
-    ax.text(-0.1, -0.28, "例数",
-            transform=ax.transAxes,
-            fontsize=12)
-    
-    ax.text(0.95, 0.98, f'カイ二乗値: {chi2:.3f}, p値: {p:.3f}, 自由度: {dof}', 
-            transform=ax.transAxes, 
-            verticalalignment='top', 
-            horizontalalignment='right',
-            fontweight='bold')
-    
-    plt.tight_layout()
-    
-    if save_fig:
-        plt.savefig(save_path)
+    Parameters:
+        path_to_shap_file (str): The path to save the SHAP file.
+        shap_exp (shap.Explanation): The SHAP explanations to be saved.
 
-    plt.show()
+    Returns:
+        None
+    """
+    with open(path_to_shap_file, "wb") as p:
+        pickle.dump(shap_exp, p)
 
+    return None
