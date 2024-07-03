@@ -1,25 +1,24 @@
+import importlib.util
 import math
 import pickle
 import subprocess
+import types
 import warnings
 
 import autograd.numpy as agnp
 import lifelines
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy.stats as stats
+import seaborn as sns
 import shap
 import sklearn.preprocessing as sp
 import statsmodels.formula.api as smf
 import tensorflow as tf
-from sklearn.linear_model import LinearRegression
-import importlib.util
-import types
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.stats import gaussian_kde
-import scipy.stats as stats
 from lifelines.utils import concordance_index
-
+from scipy.stats import gaussian_kde
+from sklearn.linear_model import LinearRegression
 
 
 class NullModel:
@@ -194,7 +193,7 @@ def split_data_for_sreftml(
         if pd.isna(linreg).any().any():
             warnings.warn("Missing value imputation was performed for some features.")
             linreg = linreg.fillna(linreg.mean())
-            
+
     df_ = df_.merge(linreg)
 
     x = df_.TIME

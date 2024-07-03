@@ -1,11 +1,11 @@
 import itertools
+import math
 import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import math
 import shap
 import sklearn.preprocessing as sp
 import tensorflow as tf
@@ -548,7 +548,10 @@ def scatter_matrix_plot(
 
 
 def correlation_plot_strata(
-    df: pd.DataFrame, name_biomarkers: list[str], strata: str = "status", save_file_path: str = None
+    df: pd.DataFrame,
+    name_biomarkers: list[str],
+    strata: str = "status",
+    save_file_path: str = None,
 ) -> None:
     """
     Generate a heatmap and pairplot of biomarkers for each strata.
@@ -576,7 +579,7 @@ def correlation_plot_strata(
         sns.pairplot(df[df[strata] == i][name_biomarkers].reset_index(drop=True))
 
     fig = sns.pairplot(df[name_biomarkers + [strata]], hue=strata, diag_kind="hist")
-    
+
     if save_file_path is not None:
         fig.savefig(save_file_path, transparent=True)
     return None
