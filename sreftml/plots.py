@@ -11,9 +11,9 @@ import sklearn.preprocessing as sp
 import tensorflow as tf
 from matplotlib.colors import ListedColormap
 from scipy.stats import gaussian_kde, linregress
-
 from src.SReFT_ML.sreft_ml.sreftml.make_demodata import model_sigmoid
-from src.SReFT_ML.sreft_ml.sreftml.utilities import n2mfrow, remove_outliers, clean_duplicate
+from src.SReFT_ML.sreft_ml.sreftml.utilities import (clean_duplicate, n2mfrow,
+                                                     remove_outliers)
 
 
 def hp_search_plot(

@@ -192,6 +192,8 @@ def surv_inv(s, params):
     # gompertz
     t = np.log(1 - params["c_"] / params["lambda_"] * np.log(s)) / params["c_"]
     return t
+
+
 """
 
 root_dir = "/Users/tamutomo/OneDrive - 千葉大学/lab/SReFT/ROOT"
