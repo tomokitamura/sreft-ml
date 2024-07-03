@@ -676,3 +676,167 @@ def save_shap(path_to_shap_file: str, shap_exp: shap.Explanation) -> None:
         pickle.dump(shap_exp, p)
 
     return None
+
+def remove_outliers(data: np.ndarray, threshold: float = 3.0) -> np.ndarray:
+    """
+    Remove outliers from the data using Z-score method.
+
+    Args:
+        data (np.ndarray): Input data array.
+        threshold (float, optional): Z-score threshold to identify outliers. Defaults to 3.0.
+
+    Returns:
+        np.ndarray: Boolean mask array where True indicates non-outlier data points.
+    """
+    if len(data.shape) == 1:
+        z_scores = np.abs((data - np.nanmean(data)) / np.nanstd(data))
+    else:
+        z_scores = np.abs((data - np.nanmean(data, axis=0)) / np.nanstd(data, axis=0))
+    return z_scores < threshold
+
+
+def between_group_comparison_plot(
+    df, 
+    title='NYHA分類/offsetTをNYHAと同じ例数ずつ分けた時の分布', 
+    xlabel='NYHA分類', 
+    ylabel='死亡率', 
+    legend_x='NYHA分類', 
+    legend_y='offsetT', 
+    save_fig=False, 
+    save_path='NYHA_offsetT_bar_plot.png'
+):
+    """
+    Generate a moltarity comparison of NYHA and offsetT.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing the biomarker data.
+        title The title of output graph.
+        xlabel The name of x-label.
+        ylabel The name of y-label.
+        legend_x The displayed legend for x-label.
+        legend_y The displayed legend for y-label.
+        save_fig A bool value which to save or not.
+        save_path (str, optional): The path where the plot will be saved. Default to None.
+
+    Returns:
+    - fig (plt.Figure): Matplotlib figure object representing the generated plot.
+    """
+    # NYHA2とNYHA3の患者をそれぞれ2つのグループに分割
+    def split_nyha_groups(df, nyha_value, group_labels):
+        subset = df[df['NYHA分類'] == nyha_value]
+        subset = subset.sort_values(by='NTproBNP_log')
+        n = len(subset) // 2
+        remainder = len(subset) % 2
+        groups = []
+        for i in range(2):
+            size = n + (1 if i < remainder else 0)
+            groups.append(subset.iloc[:size])
+            subset = subset.iloc[size:]
+        for group, label in zip(groups, group_labels):
+            df.loc[group.index, 'NYHA分類'] = label
+
+    split_nyha_groups(df, 2, ['2', '2+'])
+    split_nyha_groups(df, 3, ['3', '3+'])
+
+    # データのグループ化
+    df_baseline = df.drop_duplicates(subset="ID")
+    groups = ['1.0', '2', '2+', '3', '3+', '4.0']
+
+    # 各グループのデータを確認
+    for group in groups:
+        print(f"Group {group}:")
+        print(df_baseline[df_baseline['NYHA分類'] == group].head())
+
+    # NYHA分類カラムを文字列型に変換
+    df_baseline['NYHA分類'] = df_baseline['NYHA分類'].astype(str)
+
+    # NYHA分類ごとの人数と死亡者数を計算
+    nyha_counts = [len(df_baseline[df_baseline['NYHA分類'] == group]) for group in groups]
+    nyha_deaths = [
+        len(df_baseline[(df_baseline['NYHA分類'] == group) & (df_baseline['DEATH'] == 1)]) for group in groups
+    ]
+
+    # 各グループの人数と死亡者数を確認
+    print("NYHA counts:", nyha_counts)
+    print("NYHA deaths:", nyha_deaths)
+
+    # offsetTを用いた人数と死亡者数の計算
+    offsetT_df = df_baseline.sort_values('offsetT')
+    offsetT_counts = []
+    offsetT_deaths = []
+    offsetT_ranges = []
+    cumulative_count = 0
+
+    for count in nyha_counts:
+        if count > 0:
+            group = offsetT_df.iloc[cumulative_count:cumulative_count + count]
+            offsetT_counts.append(len(group))
+            offsetT_deaths.append(len(group[group['DEATH'] == 1]))
+            offsetT_ranges.append(f"{group['offsetT'].min():.2f}-{group['offsetT'].max():.2f}")
+            cumulative_count += count
+        else:
+            offsetT_counts.append(0)
+            offsetT_deaths.append(0)
+            offsetT_ranges.append("N/A")
+
+    # 各グループのoffsetTによる人数と死亡者数を確認
+    print("OffsetT counts:", offsetT_counts)
+    print("OffsetT deaths:", offsetT_deaths)
+    print("OffsetT ranges:", offsetT_ranges)
+
+    # 死亡率の計算
+    nyha_death_rates = [death / count if count > 0 else 0 for death, count in zip(nyha_deaths, nyha_counts)]
+    offsetT_death_rates = [death / count if count > 0 else 0 for death, count in zip(offsetT_deaths, offsetT_counts)]
+
+    # 死亡率の確認
+    print("NYHA death rates:", nyha_death_rates)
+    print("OffsetT death rates:", offsetT_death_rates)
+
+    # カイ二乗検定の実行
+    chi2, p, dof, expected = stats.chi2_contingency([
+        nyha_deaths, 
+        offsetT_deaths
+    ])
+
+    print(f"カイ二乗値: {chi2}, p値: {p}, 自由度: {dof}")
+
+    # グラフの描画
+    fig, ax = plt.subplots(figsize=(10, 8))
+    x = range(len(groups))
+    width = 0.35
+
+    ax.bar([p - width/2 for p in x], nyha_death_rates, width, label=legend_x)
+    ax.bar([p + width/2 for p in x], offsetT_death_rates, width, label=legend_y)
+
+    ax.set_xlabel(xlabel, fontsize=15, fontweight="bold")
+    ax.set_ylabel(ylabel, fontsize=15, fontweight="bold")
+    ax.set_title(title, fontsize=20)
+    ax.set_xticks(x, fontsize=15)
+    ax.set_xticklabels(groups)
+    ax.legend(fontsize=20)
+
+    # グラフの下に人数とoffsetTの範囲を表示
+    for i in range(len(groups)):
+        ax.text(i, -0.15, f'{nyha_counts[i]} 例', ha='center', va='bottom', fontsize=10, fontweight="bold")
+        ax.text(i, -0.05, f'{offsetT_ranges[i]} 年', ha='center', va='top', fontsize=10, rotation=30)
+    ax.text(-0.1, -0.15, "疾患時間範囲",
+            transform=ax.transAxes,
+            fontsize=12)
+    
+    ax.text(-0.1, -0.28, "例数",
+            transform=ax.transAxes,
+            fontsize=12)
+    
+    ax.text(0.95, 0.98, f'カイ二乗値: {chi2:.3f}, p値: {p:.3f}, 自由度: {dof}', 
+            transform=ax.transAxes, 
+            verticalalignment='top', 
+            horizontalalignment='right',
+            fontweight='bold')
+    
+    plt.tight_layout()
+    
+    if save_fig:
+        plt.savefig(save_path)
+
+    plt.show()
+

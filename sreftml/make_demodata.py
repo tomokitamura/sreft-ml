@@ -192,9 +192,9 @@ def surv_inv(s, params):
     # gompertz
     t = np.log(1 - params["c_"] / params["lambda_"] * np.log(s)) / params["c_"]
     return t
+"""
 
-
-root_dir = "/Users/ryota/OneDrive - 千葉大学/Project_ml"
+root_dir = "/Users/tamutomo/OneDrive - 千葉大学/lab/SReFT/ROOT"
 os.chdir(root_dir)
 
 
@@ -215,7 +215,7 @@ df = df.query("left_t == 0").drop("left_t", axis=1)
 
 
 save_csv_with_hash_demo(df, params_output, "data/demo/demodata", "data/demo/demoparams")
-
+"""
 # %% Libraries, Functions
 from collections.abc import Callable
 

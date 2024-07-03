@@ -12,8 +12,8 @@ import tensorflow as tf
 from matplotlib.colors import ListedColormap
 from scipy.stats import gaussian_kde, linregress
 
-from .make_demodata import model_sigmoid
-from .utilities import clean_duplicate, n2mfrow
+from src.SReFT_ML.sreft_ml.sreftml.make_demodata import model_sigmoid
+from src.SReFT_ML.sreft_ml.sreftml.utilities import n2mfrow, remove_outliers, clean_duplicate
 
 
 def hp_search_plot(
