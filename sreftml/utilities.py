@@ -824,8 +824,8 @@ def between_group_comparison_plot(
     ax.set_xlabel(xlabel, fontsize=15, fontweight="bold")
     ax.set_ylabel(ylabel, fontsize=15, fontweight="bold")
     ax.set_title(title, fontsize=20)
-    ax.set_xticks(x, fontsize=15)
-    ax.set_xticklabels(groups)
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups, fontsize=15)
     ax.legend(fontsize=20)
 
     # グラフの下に人数とoffsetTの範囲を表示
