@@ -13,7 +13,7 @@ from matplotlib.colors import ListedColormap
 from scipy.stats import gaussian_kde, linregress
 from src.sreft_ml.sreftml.make_demodata import model_sigmoid
 from src.sreft_ml.sreftml.utilities import (clean_duplicate, n2mfrow,
-                                                     remove_outliers)
+                                            remove_outliers)
 
 
 def hp_search_plot(
