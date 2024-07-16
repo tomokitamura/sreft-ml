@@ -95,12 +95,10 @@ def prediction_plot(
     sreft: tf.keras.Model,
     df: pd.DataFrame,
     name_biomarkers: list[str],
-    name_biomarkers_display: list[str],
     name_covariates: list[str],
     scaler_y: sp.StandardScaler,
     scaler_cov: sp.StandardScaler,
     biomarkers_is_reversed: dict[str, bool] | None = None,
-    biomarkers_to_remove_outlier: list[str] | None = None,
     res: int = 100,
     density: bool = False,
     useOffsetT: bool = True,
@@ -135,8 +133,7 @@ def prediction_plot(
     n_covariate = len(name_covariates)
     n_row, n_col = n2mfrow(n_biomarker, ncol_max)
     cm = plt.colormaps["Set1"]
-    if biomarkers_to_remove_outlier is None:
-        biomarkers_to_remove_outlier = []
+
 
     y_data = df[name_biomarkers].values
 
@@ -172,10 +169,7 @@ def prediction_plot(
         x_data_tmp = x_data
         y_data_tmp = y_data
 
-        if name_biomarkers[k] in biomarkers_to_remove_outlier:
-            outlier_mask = remove_outliers(y_data_tmp[:, k])
-            x_data_tmp = x_data_tmp[outlier_mask]
-            y_data_tmp = y_data_tmp[outlier_mask]
+
         if biomarkers_is_reversed is not None:
             if biomarkers_is_reversed[name_biomarkers[k]]:
                 y_data_tmp[:, k] = -y_data_tmp[:, k]
@@ -215,7 +209,6 @@ def prediction_plot(
                 "Observation Period (year)", fontsize=label_size, fontweight="bold"
             )
 
-        ax.set_title(name_biomarkers_display[k], fontsize=title_size, fontweight="bold")
 
     fig.supxlabel("疾患時間（年）", fontsize=label_size, fontweight="heavy")
 
