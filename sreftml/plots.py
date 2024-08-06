@@ -1042,7 +1042,7 @@ def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n):
     axes = axes.flatten()
     
     for i, biomarker in enumerate(name_biomarkers):
-        if biomarker == "左心駆出率":
+        if biomarker == "EF":
             continue
         
         slope_column = f"{biomarker}_slope"
