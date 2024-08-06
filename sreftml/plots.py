@@ -10,9 +10,8 @@ import sklearn.preprocessing as sp
 import tensorflow as tf
 import os
 from scipy.stats import gaussian_kde, linregress
-
 from .utilities import clean_duplicate, n2mfrow, remove_outliers
-
+from sklearn.decomposition import PCA
 
 def hp_search_plot(
     df_grid: pd.DataFrame,
@@ -95,6 +94,7 @@ def prediction_plot(
     sreft: tf.keras.Model,
     df: pd.DataFrame,
     name_biomarkers: list[str],
+    name_biomarkers_display: list[str],
     name_covariates: list[str],
     scaler_y: sp.StandardScaler,
     scaler_cov: sp.StandardScaler,
@@ -173,7 +173,7 @@ def prediction_plot(
         if biomarkers_is_reversed is not None:
             if biomarkers_is_reversed[name_biomarkers[k]]:
                 y_data_tmp[:, k] = -y_data_tmp[:, k]
-
+        """
         if density:
             x_ = x_data_tmp[~np.isnan(y_data_tmp[:, k])]
             y_ = y_data_tmp[~np.isnan(y_data_tmp[:, k]), k]
@@ -184,6 +184,27 @@ def prediction_plot(
                 z = gaussian_kde(xy)(xy)
             idx = z.argsort()
             ax.scatter(x_[idx], y_[idx], c=z[idx], s=2, label="_nolegend_")
+        """
+        if density:
+            x_ = x_data_tmp[~np.isnan(y_data_tmp[:, k])]
+            y_ = y_data_tmp[~np.isnan(y_data_tmp[:, k]), k]
+        
+            try:
+                xy = np.vstack([x_, y_])
+                z = gaussian_kde(xy)(xy)
+                idx = z.argsort()
+                ax.scatter(x_[idx], y_[idx], c=z[idx], s=2, label="_nolegend_")
+            except np.linalg.LinAlgError:
+                # 次元削減を行う
+                pca = PCA(n_components=1)
+                x_pca = pca.fit_transform(x_.reshape(-1, 1))
+                y_pca = pca.fit_transform(y_.reshape(-1, 1))
+                xy = np.vstack([x_pca.flatten(), y_pca.flatten()])
+                z = gaussian_kde(xy)(xy)
+                idx = z.argsort()
+                ax.scatter(x_pca[idx].flatten(), y_pca[idx].flatten(), c=z[idx], s=2, label="_nolegend_")
+            
+        
         else:
             ax.scatter(
                 x_data_tmp, y_data_tmp[:, k], c="silver", s=2, label="_nolegend_"
@@ -208,8 +229,14 @@ def prediction_plot(
             ax.set_xlabel(
                 "Observation Period (year)", fontsize=label_size, fontweight="bold"
             )
-
-
+        
+        ax.set_title(name_biomarkers_display[k], fontsize=title_size, fontweight="bold")
+        #以下五行試し
+        mask = ~np.isnan(x_data_tmp) & ~np.isnan(y_data_tmp[:, k])
+        slope, intercept, r_value, p_value, std_err = linregress(x_data_tmp[mask], y_data_tmp[mask, k])
+        ax.plot(x_data_tmp, slope * x_data_tmp + intercept, color='red', linestyle='--')
+        ax.annotate(f"Slope: {slope:.3f}", xy=(0.05, 0.95), xycoords='axes fraction', fontsize=12,
+                    horizontalalignment='left', verticalalignment='top', bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white"))
     fig.supxlabel("疾患時間（年）", fontsize=label_size, fontweight="heavy")
 
     if n_covariate > 0:
@@ -960,3 +987,80 @@ def offsetT_offsetT_scatter_plot(
     return offsetT_offsetT_scatter_plot
  
     
+def plot_id_histogram(df, id_column, biomarkers, save_path):
+    """
+    バイオマーカーごとにデータのタイムポイント数をヒストグラムとしてプロットし、
+    サブプロットで一枚の画像にまとめて保存する関数。
+    
+    Parameters:
+    df (pd.DataFrame): データフレーム
+    id_column (str): ID列の名前
+    biomarkers (list): バイオマーカーのリスト
+    save_path (str): 保存先のディレクトリ
+    """
+    fig, axes = plt.subplots(nrows=4, ncols=4, figsize=(20, 15))
+    axes = axes.flatten()
+    
+    for i, biomarker in enumerate(biomarkers):
+        
+        # 各バイオマーカーごとにID列の出現頻度を計算
+        id_counts = df.dropna(subset=[biomarker])[id_column].value_counts()
+        
+        # ヒストグラムをプロット
+        axes[i].hist(id_counts, bins=range(1, id_counts.max() + 2), edgecolor='black', align='left')
+        axes[i].set_title(biomarker)
+        axes[i].set_xlabel('Number of Data Points per ID')
+        axes[i].set_ylabel('Frequency')
+        axes[i].set_xticks(range(1, id_counts.max() + 1))
+        axes[i].grid(True)
+    
+    # 不要なサブプロットを削除
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+    
+    plt.tight_layout()
+    plt.savefig(save_path + 'id_histogram.png', transparent=True, dpi=300)
+    plt.show()
+
+def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path):
+    """
+    バイオマーカーごとにデータのタイムポイント数をヒストグラムとしてプロットし、
+    サブプロットで一枚の画像にまとめて保存する関数。
+    
+    Parameters:
+    df (pd.DataFrame): データフレーム
+    name_biomarkers (list): バイオマーカーのリスト
+    id_column (str): ID列の名前
+    save_path (str): 保存先のディレクトリ
+    """
+    fig, axes = plt.subplots(nrows=4, ncols=4, figsize=(20, 15))
+    axes = axes.flatten()
+    
+    for i, biomarker in enumerate(name_biomarkers):
+        if biomarker == "左心駆出率":
+            continue
+        
+        slope_column = f"{biomarker}_slope"
+        df_biomarker = df[[id_column, slope_column]].dropna()
+
+        n, bins, patches = axes[i].hist(df_biomarker[slope_column], bins=100, edgecolor='black')
+        mean_val = df_biomarker[slope_column].mean()
+        median_val = df_biomarker[slope_column].median()
+        sd_val = df_biomarker[slope_column].std()
+        cv_val = sd_val / mean_val
+        axes[i].set_title(biomarker)
+        axes[i].set_xlabel('Slope')
+        axes[i].set_ylabel('Count')
+        
+        # 平均値とCVを表示
+        stats_text = f'Mean: {mean_val:.2f}\nMedian: {median_val:.2f}\nSD: {sd_val:.2f}\nCV: {cv_val:.2f}'
+        axes[i].text(0.95, 0.95, stats_text, transform=axes[i].transAxes,
+                     fontsize=12, verticalalignment='top', horizontalalignment='right')
+    
+    # 不要なサブプロットを削除
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(save_path + 'slope_hist.png', transparent=True, dpi=300)
+    plt.show()
