@@ -1022,7 +1022,7 @@ def plot_id_histogram(df, id_column, biomarkers, save_path):
     plt.savefig(save_path + 'id_histogram.png', transparent=True, dpi=300)
     plt.show()
 
-def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path):
+def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n):
     """
     バイオマーカーごとにデータのタイムポイント数をヒストグラムとしてプロットし、
     サブプロットで一枚の画像にまとめて保存する関数。
@@ -1032,7 +1032,12 @@ def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path):
     name_biomarkers (list): バイオマーカーのリスト
     id_column (str): ID列の名前
     save_path (str): 保存先のディレクトリ
+    n (int): 閾値の設定
     """
+    
+    id_counts = df[id_column].value_counts()
+    filtered_ids = id_counts[id_counts > n].index
+    df = df[df[id_column].isin(filtered_ids)]
     fig, axes = plt.subplots(nrows=4, ncols=4, figsize=(20, 15))
     axes = axes.flatten()
     
@@ -1047,13 +1052,17 @@ def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path):
         mean_val = df_biomarker[slope_column].mean()
         median_val = df_biomarker[slope_column].median()
         sd_val = df_biomarker[slope_column].std()
+        se_val = sd_val / (len(df_biomarker[slope_column]) ** 0.5)
         cv_val = sd_val / mean_val
         axes[i].set_title(biomarker)
         axes[i].set_xlabel('Slope')
         axes[i].set_ylabel('Count')
         
         # 平均値とCVを表示
-        stats_text = f'Mean: {mean_val:.2f}\nMedian: {median_val:.2f}\nSD: {sd_val:.2f}\nCV: {cv_val:.2f}'
+        stats_text = (f'Mean: {mean_val:.2f}\n'
+              f'Median: {median_val:.2f}\n'
+              f'CV: {cv_val:.2f}\n'
+              f'Mean ± 2SE: {mean_val:.2f} ± {2*se_val:.2f}')
         axes[i].text(0.95, 0.95, stats_text, transform=axes[i].transAxes,
                      fontsize=12, verticalalignment='top', horizontalalignment='right')
     
