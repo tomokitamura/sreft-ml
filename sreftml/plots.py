@@ -1022,7 +1022,7 @@ def plot_id_histogram(df, id_column, biomarkers, save_path):
     plt.savefig(save_path + 'id_histogram.png', transparent=True, dpi=300)
     plt.show()
 
-def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n):
+def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n, bins):
     """
     バイオマーカーごとにデータのタイムポイント数をヒストグラムとしてプロットし、
     サブプロットで一枚の画像にまとめて保存する関数。
@@ -1033,6 +1033,7 @@ def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n):
     id_column (str): ID列の名前
     save_path (str): 保存先のディレクトリ
     n (int): 閾値の設定
+    bins(int): 範囲の数
     """
     
     id_counts = df[id_column].value_counts()
@@ -1048,21 +1049,22 @@ def process_and_plot_biomarkers(df, name_biomarkers, id_column, save_path, n):
         slope_column = f"{biomarker}_slope"
         df_biomarker = df[[id_column, slope_column]].dropna()
 
-        n, bins, patches = axes[i].hist(df_biomarker[slope_column], bins=100, edgecolor='black')
-        mean_val = df_biomarker[slope_column].mean()
         median_val = df_biomarker[slope_column].median()
-        sd_val = df_biomarker[slope_column].std()
-        se_val = sd_val / (len(df_biomarker[slope_column]) ** 0.5)
-        cv_val = sd_val / mean_val
+        std_val = df_biomarker[slope_column].std()
+        lower_bound = median_val - 10 * std_val
+        upper_bound = median_val + 10 * std_val
+        df_biomarker_filtered = df_biomarker[(df_biomarker[slope_column] >= lower_bound) & (df_biomarker[slope_column] <= upper_bound)]
+        
+        n, bins, patches = axes[i].hist(df_biomarker_filtered[slope_column], bins=bins, edgecolor='black')
+        mean_val = df_biomarker_filtered[slope_column].mean()
+        median_val = df_biomarker_filtered[slope_column].median()
+        se_val = std_val / (len(df_biomarker_filtered) ** 0.5)
         axes[i].set_title(biomarker)
         axes[i].set_xlabel('Slope')
         axes[i].set_ylabel('Count')
         
-        # 平均値とCVを表示
-        stats_text = (f'Mean: {mean_val:.2f}\n'
-              f'Median: {median_val:.2f}\n'
-              f'CV: {cv_val:.2f}\n'
-              f'Mean ± 2SE: {mean_val:.2f} ± {2*se_val:.2f}')
+        # 平均値とSEを表示
+        stats_text = f'Mean: {mean_val:.2f}\nMedian: {median_val:.2f}\nMean ± 2SE: {mean_val:.2f} ± {2*se_val:.2f}'
         axes[i].text(0.95, 0.95, stats_text, transform=axes[i].transAxes,
                      fontsize=12, verticalalignment='top', horizontalalignment='right')
     
