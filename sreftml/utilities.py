@@ -15,7 +15,11 @@ import seaborn as sns
 from scipy.stats import gaussian_kde
 import scipy.stats as stats
 from lifelines.utils import concordance_index
-
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import LabelEncoder
 
 
 class NullModel:
@@ -1309,3 +1313,73 @@ def between_group_comparison_plot(
     plt.show()
 
 
+class TimePredictor:
+    def __init__(self, data_path):
+        self.data_path = data_path
+        self.model = RandomForestRegressor(n_estimators=100, random_state=42)
+        self.label_encoders = {}
+        self.load_data()
+
+    def load_data(self):
+        if os.path.exists(self.data_path):
+            self.df = pd.read_csv(self.data_path)
+            self.df.drop(columns=["Unnamed: 0"], inplace=True, errors="ignore")
+            self.prepare_data()
+        else:
+            self.df = pd.DataFrame()
+
+    def prepare_data(self):
+        if not self.df.empty:
+            for column in self.df.select_dtypes(include=['object']).columns:
+                self.label_encoders[column] = LabelEncoder()
+                self.df[column] = self.label_encoders[column].fit_transform(self.df[column].astype(str))
+
+    def save_data(self):
+        self.df.to_csv(self.data_path, index=False)
+
+    def predict(self, initial_data, remaining_iterations, func_list_1, func_list_2, func_list_3, current_iteration):
+        if not self.df.empty and len(self.df) > 10:
+            X = self.df.drop('required_time', axis=1)
+            y = self.df['required_time']
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            self.model.fit(X_train, y_train)
+            y_pred = self.model.predict(X_test)
+            mse = mean_squared_error(y_test, y_pred)
+            print(f'Mean Squared Error: {mse}')
+
+            df_predictions = pd.DataFrame(columns=['func_1', 'func_2', 'func_3', 'predicted_time'])
+
+            for i in func_list_1:
+                for j in func_list_2:
+                    for k in func_list_3:
+                        new_data = initial_data.copy()
+                        new_data.update({"func_1": i, "func_2": j, "func_3": k})
+                        
+                        new_data_df = pd.DataFrame([new_data])
+                        new_data_df = new_data_df.applymap(lambda x: 1 if x is True else (0 if x is False else x))
+
+                        for column in new_data_df.select_dtypes(include=['object']).columns:
+                            new_data_df[column] = new_data_df[column].astype(str)
+                            if column in self.label_encoders:
+                                new_data_df[column] = self.label_encoders[column].transform(new_data_df[column])
+
+                        # 新しいデータの数値型変換処理
+                        for column in new_data_df.columns:
+                            if column not in self.label_encoders:
+                                new_data_df[column] = pd.to_numeric(new_data_df[column], errors='coerce')
+
+                        predicted_required_time = self.model.predict(new_data_df)[0]
+                        df_predictions = pd.concat([df_predictions, pd.DataFrame({'func_1': [i], 'func_2': [j], 'func_3': [k], 'predicted_time': [predicted_required_time]})], ignore_index=True)
+
+            remaining_predictions = df_predictions.iloc[current_iteration:]['predicted_time']
+            total_predicted_time = remaining_predictions.sum()
+
+            return total_predicted_time
+        else:
+            return self.df['required_time'].mean() * remaining_iterations if not self.df.empty else 0
+
+    def add_data(self, new_data):
+        new_data_df = pd.DataFrame([new_data])
+        self.df = pd.concat([self.df, new_data_df], ignore_index=True)
+        self.prepare_data()
+        self.save_data()
